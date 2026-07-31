@@ -2,6 +2,7 @@ import { defineBackend } from '@aws-amplify/backend';
 import { HttpApi, HttpMethod } from 'aws-cdk-lib/aws-apigatewayv2';
 import { HttpLambdaIntegration } from 'aws-cdk-lib/aws-apigatewayv2-integrations';
 import type { ITable } from 'aws-cdk-lib/aws-dynamodb';
+import { PolicyStatement } from 'aws-cdk-lib/aws-iam';
 import { auth } from './auth/resource.js';
 import { data } from './data/resource.js';
 import { accountApiFunction } from './functions/account-api/resource.js';
@@ -91,6 +92,12 @@ platformTables.subscription.grantReadData(functions.account.resources.lambda);
 platformTables.account.grantReadData(functions.account.resources.lambda);
 platformTables.period.grantReadData(functions.account.resources.lambda);
 platformTables.transaction.grantReadData(functions.account.resources.lambda);
+functions.account.resources.lambda.addToRolePolicy(
+  new PolicyStatement({
+    actions: ['dynamodb:Query'],
+    resources: [`${platformTables.transaction.tableArn}/index/byUserEnvironmentAndCreatedAt`],
+  }),
+);
 
 platformTables.subscription.grantReadData(functions.settlement.resources.lambda);
 platformTables.period.grantReadData(functions.settlement.resources.lambda);
@@ -116,9 +123,6 @@ backend.addOutput({
       revenuecat_webhook_url: `${webhookApi.apiEndpoint}/webhooks/revenuecat`,
       environment: process.env.SNOOZEFINE_ENVIRONMENT === 'PRODUCTION' ? 'PRODUCTION' : 'SANDBOX',
       settlement_mode: 'TEST',
-      admin_tables: Object.fromEntries(
-        allTableEnvironment.map(([variableName, table]) => [variableName, table.tableName]),
-      ),
     },
   },
 });

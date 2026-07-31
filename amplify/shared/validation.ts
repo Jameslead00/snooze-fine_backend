@@ -118,6 +118,16 @@ export const linkRevenueCatArgumentsSchema = z.object({
 });
 
 export const listTransactionsArgumentsSchema = z.object({
-  limit: z.number().int().min(1).max(100).optional(),
-  nextToken: z.string().max(4096).optional(),
+  limit: z
+    .number()
+    .int()
+    .min(1)
+    .max(100)
+    .nullish()
+    .transform((value) => value ?? undefined),
+  nextToken: z
+    .string()
+    .max(4096)
+    .nullish()
+    .transform((value) => value ?? undefined),
 });

@@ -13,6 +13,7 @@ export const auth = defineAuth({
         keyId: secret('SIWA_KEY_ID'),
         privateKey: secret('SIWA_PRIVATE_KEY'),
         teamId: secret('SIWA_TEAM_ID'),
+        scopes: ['name', 'email'],
       },
       callbackUrls: ['snoozefine://callback/'],
       logoutUrls: ['snoozefine://signout/'],
