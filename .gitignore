@@ -1,0 +1,12 @@
+node_modules/
+.amplify/
+amplify_outputs.json
+amplify_outputs*.json
+cdk.out/
+coverage/
+dist/
+.DS_Store
+.env
+.env.*
+!.env.example
+*.log

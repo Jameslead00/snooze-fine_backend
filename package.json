@@ -1,0 +1,47 @@
+{
+  "name": "snoozefine-backend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20 <23"
+  },
+  "scripts": {
+    "admin:adjust": "tsx scripts/admin.ts adjust",
+    "admin:ledger": "tsx scripts/admin.ts ledger",
+    "admin:settlement": "tsx scripts/admin.ts settlement",
+    "admin:summary": "tsx scripts/admin.ts summary",
+    "admin:unresolved-webhooks": "tsx scripts/admin.ts unresolved-webhooks",
+    "deploy": "ampx pipeline-deploy",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "eslint .",
+    "outputs": "ampx generate outputs --out-dir .",
+    "sandbox": "ampx sandbox",
+    "seed": "tsx scripts/seed.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "3.1098.0",
+    "@aws-sdk/lib-dynamodb": "3.1098.0",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@aws-amplify/backend": "1.24.0",
+    "@aws-amplify/backend-cli": "1.9.0",
+    "@eslint/js": "9.39.5",
+    "@types/aws-lambda": "8.10.162",
+    "@types/node": "20.19.9",
+    "aws-cdk-lib": "2.262.2",
+    "constructs": "10.8.0",
+    "eslint": "9.39.5",
+    "globals": "17.8.0",
+    "prettier": "3.9.6",
+    "tsx": "4.23.1",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.65.0",
+    "vitest": "4.1.10"
+  }
+}
