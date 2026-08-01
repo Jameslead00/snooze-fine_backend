@@ -115,6 +115,10 @@ export const linkRevenueCatArgumentsSchema = z.object({
   revenueCatAppUserId: z.string().min(1).max(512),
   originalAnonymousAppUserId: z.string().min(1).max(512).optional(),
   timezone: z.string().min(1).max(100),
+  creatorCode: z
+    .string()
+    .regex(/^[A-Z0-9]{1,24}$/)
+    .optional(),
 });
 
 export const listTransactionsArgumentsSchema = z.object({
@@ -130,4 +134,73 @@ export const listTransactionsArgumentsSchema = z.object({
     .max(4096)
     .nullish()
     .transform((value) => value ?? undefined),
+});
+
+const habitKindSchema = z.enum(['WATER', 'READING', 'MEDITATION', 'CUSTOM']);
+const habitUnitSchema = z.enum(['MILLILITRES', 'MINUTES', 'COUNT', 'CHECKMARK']);
+
+export const saveHabitArgumentsSchema = z.object({
+  habitId: z.string().uuid(),
+  kind: habitKindSchema,
+  title: z.string().trim().min(1).max(80),
+  targetValue: z.number().int().min(1).max(100_000),
+  unit: habitUnitSchema,
+  weekdays: z.array(z.number().int().min(1).max(7)).min(1).max(7),
+  deadlineMinutes: z.number().int().min(0).max(1_439),
+  timezone: z.string().min(1).max(100),
+});
+
+export const habitIdArgumentsSchema = z.object({
+  habitId: z.string().uuid(),
+});
+
+export const habitProgressArgumentsSchema = z.object({
+  habitId: z.string().uuid(),
+  progressEventId: z.string().uuid(),
+  amount: z.number().int().min(1).max(100_000),
+  occurredAt: z.iso.datetime({ offset: true }),
+});
+
+export const saveSyncedAlarmArgumentsSchema = z.object({
+  alarmId: z.string().uuid(),
+  expectedVersion: z.number().int().min(0),
+  hour: z.number().int().min(0).max(23),
+  minute: z.number().int().min(0).max(59),
+  repeatWeekdays: z.array(z.number().int().min(1).max(7)).max(7),
+  snoozeDurationMinutes: z.number().int().min(1).max(120),
+  label: z.string().trim().min(1).max(80),
+  isEnabled: z.boolean(),
+  timezone: z.string().min(1).max(100),
+});
+
+export const archiveSyncedAlarmArgumentsSchema = z.object({
+  alarmId: z.string().uuid(),
+  expectedVersion: z.number().int().min(1),
+});
+
+export const recordWakeCompletionArgumentsSchema = z.object({
+  wakeEventId: z.string().uuid(),
+  alarmId: z.string().min(1).max(200),
+  alarmOccurrenceId: z.string().min(1).max(200),
+  scheduledAt: z.iso.datetime({ offset: true }),
+  completedAt: z.iso.datetime({ offset: true }),
+});
+
+export const charityVoteArgumentsSchema = z.object({
+  charityId: z.string().min(1).max(200),
+});
+
+export const recordEngagementArgumentsSchema = z.object({
+  eventId: z.string().uuid(),
+  sessionId: z.string().uuid(),
+  name: z.enum([
+    'SESSION_STARTED',
+    'SUBSCRIPTION_GATE_VIEWED',
+    'TODAY_VIEWED',
+    'HABITS_VIEWED',
+    'COMMUNITY_VIEWED',
+    'ACCOUNT_VIEWED',
+  ]),
+  occurredAt: z.iso.datetime({ offset: true }),
+  appVersion: z.string().min(1).max(100).optional(),
 });

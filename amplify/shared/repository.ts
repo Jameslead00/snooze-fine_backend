@@ -38,6 +38,7 @@ export interface PlatformRepository {
     revenueCatAppUserId: string;
     originalAnonymousAppUserId: string | undefined;
     timezone: string;
+    creatorCode: string | undefined;
     now: string;
   }): Promise<{ linked: boolean; duplicate: boolean }>;
   getPointAccountView(userId: string, now: string): Promise<PointAccountView>;

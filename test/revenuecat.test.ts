@@ -52,6 +52,32 @@ describe('RevenueCat processing', () => {
     });
   });
 
+  it('never rolls the active account backward when an older allocation arrives late', async () => {
+    const repository = new InMemoryRepository();
+    repository.link('cognito-1', 'user-1');
+    const renewal = revenueCatEvent({
+      id: 'newer-renewal',
+      type: 'RENEWAL',
+      purchasedAt: '2026-08-01T00:00:00.000Z',
+      expiresAt: '2026-09-01T00:00:00.000Z',
+      eventAt: '2026-08-01T00:00:01.000Z',
+    });
+    await processRevenueCatEvent(repository, renewal, '2026-08-01T00:00:02.000Z');
+    const newerPeriodID = repository.accounts.get('cognito-1')?.activePeriodId;
+
+    await processRevenueCatEvent(
+      repository,
+      revenueCatEvent({ id: 'late-initial', eventAt: '2026-07-01T00:00:01.000Z' }),
+      '2026-08-01T00:01:00.000Z',
+    );
+
+    expect(repository.accounts.get('cognito-1')).toMatchObject({
+      activePeriodId: newerPeriodID,
+      currentBalance: 2_000,
+      lifetimeAllocated: 4_000,
+    });
+  });
+
   it('keeps an unexpired cancelled subscription and its points eligible', async () => {
     const repository = new InMemoryRepository();
     repository.link('cognito-1', 'user-1');
@@ -64,6 +90,9 @@ describe('RevenueCat processing', () => {
 
     expect(repository.subscriptions.get('cognito-1')?.status).toBe('CANCELLED_PENDING_EXPIRY');
     expect(repository.accounts.get('cognito-1')?.currentBalance).toBe(2_000);
+    await expect(
+      repository.getPointAccountView('cognito-1', '2026-07-15T00:00:01.000Z'),
+    ).resolves.toMatchObject({ isEligible: true });
   });
 
   it('expiration performs no allocation and marks the subscription expired', async () => {
@@ -80,6 +109,9 @@ describe('RevenueCat processing', () => {
     expect(result.allocatedPoints).toBe(0);
     expect(repository.periods.size).toBe(1);
     expect(repository.subscriptions.get('cognito-1')?.status).toBe('EXPIRED');
+    await expect(
+      repository.getPointAccountView('cognito-1', '2026-08-01T00:00:02.000Z'),
+    ).resolves.toMatchObject({ isEligible: false });
   });
 
   it('stores unknown users as unresolved instead of dropping the event', async () => {

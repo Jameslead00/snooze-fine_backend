@@ -9,4 +9,5 @@ dist/
 .env
 .env.*
 !.env.example
+admin_tables.local.json
 *.log

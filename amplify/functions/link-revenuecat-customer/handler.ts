@@ -1,5 +1,6 @@
 import type { AppSyncResolverHandler } from 'aws-lambda';
 import { cognitoSub, isIanaTimezone } from '../../shared/appsync.js';
+import { configuredEnvironment } from '../../shared/config.js';
 import {
   DynamoPlatformRepository,
   tableNamesFromEnvironment,
@@ -12,6 +13,7 @@ type LinkArguments = {
   revenueCatAppUserId: unknown;
   originalAnonymousAppUserId?: unknown;
   timezone: unknown;
+  creatorCode?: unknown;
 };
 
 export const handler: AppSyncResolverHandler<
@@ -24,12 +26,16 @@ export const handler: AppSyncResolverHandler<
   if (input.revenueCatAppUserId !== userId) {
     throw new DomainError('STABLE_REVENUECAT_ID_MUST_MATCH_COGNITO_SUB');
   }
-  const repository = new DynamoPlatformRepository(tableNamesFromEnvironment(), 'SANDBOX');
+  const repository = new DynamoPlatformRepository(
+    tableNamesFromEnvironment(),
+    configuredEnvironment(),
+  );
   const result = await repository.linkRevenueCatCustomer({
     userId,
     revenueCatAppUserId: input.revenueCatAppUserId,
     originalAnonymousAppUserId: input.originalAnonymousAppUserId,
     timezone: input.timezone,
+    creatorCode: input.creatorCode,
     now: new Date().toISOString(),
   });
   log('info', 'revenuecat_customer_linked', {

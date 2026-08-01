@@ -3,16 +3,22 @@ import { resolve } from 'node:path';
 import { z } from 'zod';
 import type { PlatformTableNames } from '../amplify/shared/dynamo-repository.js';
 
+export interface AdminTableNames extends PlatformTableNames {
+  engagement: string;
+}
+
 const outputsSchema = z.object({
   custom: z.object({
     snoozefine: z.object({
       revenuecat_webhook_url: z.string().url(),
       environment: z.enum(['SANDBOX', 'PRODUCTION']),
       settlement_mode: z.literal('TEST'),
-      admin_tables: z.record(z.string(), z.string()),
+      admin_tables: z.record(z.string(), z.string()).optional(),
     }),
   }),
 });
+
+const adminTablesSchema = z.record(z.string(), z.string().min(1));
 
 export interface CliOptions {
   [key: string]: string | boolean;
@@ -44,12 +50,27 @@ export function stringOption(
 }
 
 export async function loadPlatformOutputs(): Promise<{
-  tables: PlatformTableNames;
+  tables: AdminTableNames;
   webhookUrl: string;
 }> {
   const path = resolve(process.env.AMPLIFY_OUTPUTS_PATH ?? './amplify_outputs.json');
   const parsed = outputsSchema.parse(JSON.parse(await readFile(path, 'utf8')) as unknown);
-  const table = parsed.custom.snoozefine.admin_tables;
+  const embeddedTables = parsed.custom.snoozefine.admin_tables;
+  const tablesPath = process.env.SNOOZEFINE_ADMIN_TABLES_PATH;
+  const tablesJson = process.env.SNOOZEFINE_ADMIN_TABLES_JSON;
+  let table: Record<string, string> | undefined = embeddedTables;
+  if (tablesPath !== undefined) {
+    table = adminTablesSchema.parse(
+      JSON.parse(await readFile(resolve(tablesPath), 'utf8')) as unknown,
+    );
+  } else if (tablesJson !== undefined) {
+    table = adminTablesSchema.parse(JSON.parse(tablesJson) as unknown);
+  }
+  if (table === undefined) {
+    throw new Error(
+      'Admin table mapping is not configured. Set SNOOZEFINE_ADMIN_TABLES_PATH to a backend-only JSON file; physical table names must not be added to the public amplify_outputs.json copied into iOS.',
+    );
+  }
   const required = (key: string): string => {
     const value = table[key];
     if (value === undefined) throw new Error(`Backend output is missing ${key}`);
@@ -66,6 +87,7 @@ export async function loadPlatformOutputs(): Promise<{
       transaction: required('POINT_TRANSACTION_TABLE_NAME'),
       snooze: required('SNOOZE_EVENT_TABLE_NAME'),
       settlement: required('MONTHLY_SETTLEMENT_TABLE_NAME'),
+      engagement: required('ENGAGEMENT_EVENT_TABLE_NAME'),
     },
     webhookUrl: parsed.custom.snoozefine.revenuecat_webhook_url,
   };

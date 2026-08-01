@@ -41,6 +41,7 @@ async function main(): Promise<void> {
     revenueCatAppUserId,
     originalAnonymousAppUserId,
     timezone: stringOption(options, 'timezone') ?? 'Europe/Zurich',
+    creatorCode: undefined,
     now: nowIso,
   });
 

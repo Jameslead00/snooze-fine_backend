@@ -1,8 +1,10 @@
 import { type ClientSchema, a, defineData } from '@aws-amplify/backend';
 import { accountApiFunction } from '../functions/account-api/resource.js';
+import { habitApiFunction } from '../functions/habit-api/resource.js';
 import { linkRevenueCatCustomerFunction } from '../functions/link-revenuecat-customer/resource.js';
 import { monthlySettlementFunction } from '../functions/monthly-settlement/resource.js';
 import { recordSnoozeFunction } from '../functions/record-snooze/resource.js';
+import { requestAccountDeletionFunction } from '../functions/request-account-deletion/resource.js';
 
 const schema = a.schema({
   UserProfile: a
@@ -10,6 +12,7 @@ const schema = a.schema({
       userId: a.id().required(),
       email: a.email(),
       displayName: a.string(),
+      creatorCode: a.string(),
       timezone: a.string().required(),
     })
     .authorization((allow) => [
@@ -124,9 +127,14 @@ const schema = a.schema({
       userEnvironment: a.string().required(),
       pointPeriodId: a.id().required(),
       amount: a.integer().required(),
-      transactionType: a.enum(['MONTHLY_ALLOCATION', 'SNOOZE_DEDUCTION', 'ADMIN_ADJUSTMENT']),
+      transactionType: a.enum([
+        'MONTHLY_ALLOCATION',
+        'SNOOZE_DEDUCTION',
+        'HABIT_DEDUCTION',
+        'ADMIN_ADJUSTMENT',
+      ]),
       reasonCode: a.string().required(),
-      source: a.enum(['REVENUECAT_WEBHOOK', 'IOS_APP', 'ADMIN']),
+      source: a.enum(['REVENUECAT_WEBHOOK', 'IOS_APP', 'ACCOUNTABILITY_ENGINE', 'ADMIN']),
       idempotencyKey: a.string().required(),
       sourceEventId: a.string().required(),
       relatedEventId: a.string(),
@@ -160,6 +168,142 @@ const schema = a.schema({
     ])
     .authorization((allow) => [allow.group('ADMINS').to(['read'])]),
 
+  SyncedAlarm: a
+    .model({
+      id: a.id().required(),
+      userId: a.id().required(),
+      environment: a.enum(['SANDBOX', 'PRODUCTION']),
+      userEnvironment: a.string().required(),
+      hour: a.integer().required(),
+      minute: a.integer().required(),
+      repeatWeekdays: a.integer().array().required(),
+      snoozeDurationMinutes: a.integer().required(),
+      label: a.string().required(),
+      isEnabled: a.boolean().required(),
+      timezone: a.string().required(),
+      version: a.integer().required(),
+      createdAt: a.datetime().required(),
+      updatedAt: a.datetime().required(),
+    })
+    .secondaryIndexes((index) => [
+      index('userEnvironment').sortKeys(['updatedAt']).name('byUserEnvironmentAndUpdatedAt'),
+    ])
+    .authorization((allow) => [allow.group('ADMINS').to(['read'])]),
+
+  WakeCompletion: a
+    .model({
+      id: a.id().required(),
+      userId: a.id().required(),
+      environment: a.enum(['SANDBOX', 'PRODUCTION']),
+      userEnvironment: a.string().required(),
+      alarmId: a.string().required(),
+      alarmOccurrenceId: a.string().required(),
+      scheduledAt: a.datetime().required(),
+      completedAt: a.datetime().required(),
+      snoozeCount: a.integer().required(),
+      createdAt: a.datetime().required(),
+    })
+    .secondaryIndexes((index) => [
+      index('userEnvironment').sortKeys(['completedAt']).name('byUserEnvironmentAndCompletedAt'),
+    ])
+    .authorization((allow) => [allow.group('ADMINS').to(['read'])]),
+
+  EngagementEvent: a
+    .model({
+      id: a.id().required(),
+      userId: a.id().required(),
+      environment: a.enum(['SANDBOX', 'PRODUCTION']),
+      userEnvironment: a.string().required(),
+      sessionId: a.id().required(),
+      name: a.enum([
+        'SESSION_STARTED',
+        'SUBSCRIPTION_GATE_VIEWED',
+        'TODAY_VIEWED',
+        'HABITS_VIEWED',
+        'COMMUNITY_VIEWED',
+        'ACCOUNT_VIEWED',
+      ]),
+      occurredAt: a.datetime().required(),
+      receivedAt: a.datetime().required(),
+      appVersion: a.string(),
+      platform: a.enum(['IOS']),
+    })
+    .secondaryIndexes((index) => [
+      index('userEnvironment').sortKeys(['receivedAt']).name('byUserEnvironmentAndReceivedAt'),
+    ])
+    .authorization((allow) => [allow.group('ADMINS').to(['read'])]),
+
+  HabitDefinition: a
+    .model({
+      id: a.id().required(),
+      userId: a.id().required(),
+      environment: a.enum(['SANDBOX', 'PRODUCTION']),
+      userEnvironment: a.string().required(),
+      environmentState: a.string().required(),
+      kind: a.enum(['WATER', 'READING', 'MEDITATION', 'CUSTOM']),
+      title: a.string().required(),
+      targetValue: a.integer().required(),
+      unit: a.enum(['MILLILITRES', 'MINUTES', 'COUNT', 'CHECKMARK']),
+      weekdays: a.integer().array().required(),
+      deadlineMinutes: a.integer().required(),
+      timezone: a.string().required(),
+      penaltyPoints: a.integer().required(),
+      startDate: a.date().required(),
+      activeState: a.enum(['ACTIVE', 'ARCHIVED']),
+      version: a.integer().required(),
+      createdAt: a.datetime().required(),
+      updatedAt: a.datetime().required(),
+    })
+    .secondaryIndexes((index) => [
+      index('userEnvironment').sortKeys(['updatedAt']).name('byUserEnvironmentAndUpdatedAt'),
+      index('environmentState').sortKeys(['updatedAt']).name('byEnvironmentStateAndUpdatedAt'),
+    ])
+    .authorization((allow) => [allow.group('ADMINS').to(['read'])]),
+
+  HabitOccurrence: a
+    .model({
+      id: a.id().required(),
+      userId: a.id().required(),
+      environment: a.enum(['SANDBOX', 'PRODUCTION']),
+      userEnvironmentDate: a.string().required(),
+      habitId: a.id().required(),
+      localDate: a.date().required(),
+      dueAt: a.datetime().required(),
+      targetValue: a.integer().required(),
+      unit: a.enum(['MILLILITRES', 'MINUTES', 'COUNT', 'CHECKMARK']),
+      progressValue: a.integer().required(),
+      status: a.enum(['PENDING', 'COMPLETED', 'MISSED', 'SKIPPED_INELIGIBLE']),
+      completedAt: a.datetime(),
+      missedAt: a.datetime(),
+      ledgerTransactionId: a.string(),
+      pointsDeducted: a.integer().required(),
+      officialBalance: a.integer().required(),
+      version: a.integer().required(),
+      createdAt: a.datetime().required(),
+      updatedAt: a.datetime().required(),
+    })
+    .secondaryIndexes((index) => [
+      index('userEnvironmentDate').sortKeys(['habitId']).name('byUserEnvironmentDateAndHabitId'),
+    ])
+    .authorization((allow) => [allow.group('ADMINS').to(['read'])]),
+
+  HabitProgressEvent: a
+    .model({
+      id: a.id().required(),
+      userId: a.id().required(),
+      habitId: a.id().required(),
+      occurrenceId: a.id().required(),
+      amount: a.integer().required(),
+      occurredAt: a.datetime().required(),
+      progressAfter: a.integer().required(),
+      completed: a.boolean().required(),
+      createdAt: a.datetime().required(),
+    })
+    .secondaryIndexes((index) => [
+      index('userId').sortKeys(['createdAt']).name('byUserAndCreatedAt'),
+    ])
+    .authorization((allow) => [allow.group('ADMINS').to(['read'])]),
+
   MonthlySettlement: a
     .model({
       id: a.id().required(),
@@ -185,6 +329,98 @@ const schema = a.schema({
     ])
     .authorization((allow) => [allow.group('ADMINS').to(['read'])]),
 
+  Charity: a
+    .model({
+      id: a.id().required(),
+      name: a.string().required(),
+      summary: a.string().required(),
+      websiteUrl: a.url(),
+      impactLabel: a.string(),
+      active: a.boolean().required(),
+      activeState: a.string().required(),
+      sortOrder: a.integer().required(),
+      updatedAt: a.datetime().required(),
+    })
+    .secondaryIndexes((index) => [
+      index('activeState').sortKeys(['sortOrder']).name('byActiveStateAndSortOrder'),
+    ])
+    .authorization((allow) => [allow.group('ADMINS').to(['read'])]),
+
+  CommunityBallot: a
+    .model({
+      id: a.id().required(),
+      month: a.string().required(),
+      environment: a.enum(['SANDBOX', 'PRODUCTION']),
+      environmentStatus: a.string().required(),
+      status: a.enum(['OPEN', 'CLOSED']),
+      opensAt: a.datetime().required(),
+      closesAt: a.datetime().required(),
+      charityIds: a.string().array().required(),
+      tallies: a.json().required(),
+      totalVotes: a.integer().required(),
+      winnerCharityId: a.id(),
+      donationRecordId: a.id(),
+      version: a.integer().required(),
+      updatedAt: a.datetime().required(),
+    })
+    .secondaryIndexes((index) => [
+      index('environmentStatus').sortKeys(['closesAt']).name('byEnvironmentStatusAndClosesAt'),
+    ])
+    .authorization((allow) => [allow.group('ADMINS').to(['read'])]),
+
+  DailyCharityVote: a
+    .model({
+      id: a.id().required(),
+      userId: a.id().required(),
+      environment: a.enum(['SANDBOX', 'PRODUCTION']),
+      ballotId: a.id().required(),
+      charityId: a.id().required(),
+      localVoteDate: a.date().required(),
+      timezone: a.string().required(),
+      createdAt: a.datetime().required(),
+    })
+    .secondaryIndexes((index) => [
+      index('ballotId').sortKeys(['createdAt']).name('byBallotAndCreatedAt'),
+      index('userId').sortKeys(['createdAt']).name('byUserAndCreatedAt'),
+    ])
+    .authorization((allow) => [allow.group('ADMINS').to(['read'])]),
+
+  DonationRecord: a
+    .model({
+      id: a.id().required(),
+      month: a.string().required(),
+      environment: a.enum(['SANDBOX', 'PRODUCTION']),
+      charityId: a.id().required(),
+      status: a.enum(['EXPECTED', 'APPROVED', 'PAID', 'EVIDENCED', 'VOID']),
+      expectedDonationMicroUsd: a.string().required(),
+      approvedDonationMicroUsd: a.string(),
+      paidDonationMicroUsd: a.string(),
+      paidAt: a.datetime(),
+      evidenceUrl: a.url(),
+      ownerNote: a.string(),
+      updatedAt: a.datetime().required(),
+    })
+    .secondaryIndexes((index) => [
+      index('environment').sortKeys(['month']).name('byEnvironmentAndMonth'),
+    ])
+    .authorization((allow) => [allow.group('ADMINS').to(['read'])]),
+
+  AccountDeletionRequest: a
+    .model({
+      id: a.id().required(),
+      userId: a.id().required(),
+      environment: a.enum(['SANDBOX', 'PRODUCTION']),
+      status: a.enum(['REQUESTED', 'PROCESSING', 'COMPLETED', 'FAILED']),
+      requestedAt: a.datetime().required(),
+      completedAt: a.datetime(),
+      ownerNote: a.string(),
+      updatedAt: a.datetime().required(),
+    })
+    .secondaryIndexes((index) => [
+      index('status').sortKeys(['requestedAt']).name('byStatusAndRequestedAt'),
+    ])
+    .authorization((allow) => [allow.group('ADMINS').to(['read', 'update'])]),
+
   RecordSnoozeInput: a.customType({
     alarmId: a.string().required(),
     alarmOccurrenceId: a.string().required(),
@@ -202,6 +438,7 @@ const schema = a.schema({
     serverTimestamp: a.datetime().required(),
   }),
   PointAccountResult: a.customType({
+    isEligible: a.boolean().required(),
     officialBalance: a.integer().required(),
     activePointPeriodId: a.id(),
     initialAllocation: a.integer().required(),
@@ -239,6 +476,168 @@ const schema = a.schema({
     expectedDonationMicroUsd: a.string().required(),
     warning: a.string().required(),
   }),
+  SaveHabitInput: a.customType({
+    habitId: a.id().required(),
+    kind: a.enum(['WATER', 'READING', 'MEDITATION', 'CUSTOM']),
+    title: a.string().required(),
+    targetValue: a.integer().required(),
+    unit: a.enum(['MILLILITRES', 'MINUTES', 'COUNT', 'CHECKMARK']),
+    weekdays: a.integer().array().required(),
+    deadlineMinutes: a.integer().required(),
+    timezone: a.string().required(),
+  }),
+  HabitResult: a.customType({
+    id: a.id().required(),
+    kind: a.string().required(),
+    title: a.string().required(),
+    targetValue: a.integer().required(),
+    unit: a.string().required(),
+    weekdays: a.integer().array().required(),
+    deadlineMinutes: a.integer().required(),
+    timezone: a.string().required(),
+    penaltyPoints: a.integer().required(),
+    activeState: a.string().required(),
+    scheduledToday: a.boolean().required(),
+    todayProgress: a.integer().required(),
+    todayStatus: a.string().required(),
+    todayDueAt: a.datetime(),
+    createdAt: a.datetime().required(),
+    updatedAt: a.datetime().required(),
+  }),
+  ArchiveHabitResult: a.customType({
+    id: a.id().required(),
+    archived: a.boolean().required(),
+    serverTimestamp: a.datetime().required(),
+  }),
+  HabitProgressInput: a.customType({
+    habitId: a.id().required(),
+    progressEventId: a.id().required(),
+    amount: a.integer().required(),
+    occurredAt: a.datetime().required(),
+  }),
+  HabitProgressResult: a.customType({
+    accepted: a.boolean().required(),
+    duplicate: a.boolean().required(),
+    completed: a.boolean().required(),
+    localDate: a.date().required(),
+    progressValue: a.integer().required(),
+    targetValue: a.integer().required(),
+    status: a.string().required(),
+    officialBalance: a.integer().required(),
+    serverTimestamp: a.datetime().required(),
+  }),
+  SaveSyncedAlarmInput: a.customType({
+    alarmId: a.id().required(),
+    expectedVersion: a.integer().required(),
+    hour: a.integer().required(),
+    minute: a.integer().required(),
+    repeatWeekdays: a.integer().array().required(),
+    snoozeDurationMinutes: a.integer().required(),
+    label: a.string().required(),
+    isEnabled: a.boolean().required(),
+    timezone: a.string().required(),
+  }),
+  SyncedAlarmResult: a.customType({
+    id: a.id().required(),
+    hour: a.integer().required(),
+    minute: a.integer().required(),
+    repeatWeekdays: a.integer().array().required(),
+    snoozeDurationMinutes: a.integer().required(),
+    label: a.string().required(),
+    isEnabled: a.boolean().required(),
+    timezone: a.string().required(),
+    version: a.integer().required(),
+    createdAt: a.datetime().required(),
+    updatedAt: a.datetime().required(),
+  }),
+  ArchiveSyncedAlarmResult: a.customType({
+    id: a.id().required(),
+    version: a.integer().required(),
+    archived: a.boolean().required(),
+    serverTimestamp: a.datetime().required(),
+  }),
+  RecordWakeCompletionInput: a.customType({
+    wakeEventId: a.id().required(),
+    alarmId: a.string().required(),
+    alarmOccurrenceId: a.string().required(),
+    scheduledAt: a.datetime().required(),
+    completedAt: a.datetime().required(),
+  }),
+  RecordWakeCompletionResult: a.customType({
+    accepted: a.boolean().required(),
+    duplicate: a.boolean().required(),
+    snoozeCount: a.integer().required(),
+    serverTimestamp: a.datetime().required(),
+  }),
+  AccountabilityStatisticsResult: a.customType({
+    weekSnoozes: a.integer().required(),
+    weekWakeUps: a.integer().required(),
+    weekNoSnoozeMornings: a.integer().required(),
+    allTimeSnoozes: a.integer().required(),
+    allTimeWakeUps: a.integer().required(),
+    allTimeNoSnoozeMornings: a.integer().required(),
+    currentBalance: a.integer().required(),
+    currentPeriodDeducted: a.integer().required(),
+    lifetimeDeducted: a.integer().required(),
+    timezone: a.string().required(),
+    serverTimestamp: a.datetime().required(),
+  }),
+  CommunityCharityResult: a.customType({
+    id: a.id().required(),
+    name: a.string().required(),
+    summary: a.string().required(),
+    websiteUrl: a.url(),
+    impactLabel: a.string(),
+    votes: a.integer().required(),
+  }),
+  CommunityDashboardResult: a.customType({
+    ballotId: a.id(),
+    month: a.string(),
+    status: a.string().required(),
+    opensAt: a.datetime(),
+    closesAt: a.datetime(),
+    charities: a.ref('CommunityCharityResult').array().required(),
+    totalVotes: a.integer().required(),
+    myVoteCharityId: a.id(),
+    canVoteToday: a.boolean().required(),
+    winnerCharityId: a.id(),
+    donationStatus: a.string(),
+    expectedDonationMicroUsd: a.string(),
+    paidDonationMicroUsd: a.string(),
+    evidenceUrl: a.url(),
+    serverTimestamp: a.datetime().required(),
+  }),
+  CommunityVoteResult: a.customType({
+    accepted: a.boolean().required(),
+    duplicate: a.boolean().required(),
+    charityId: a.id().required(),
+    localVoteDate: a.date().required(),
+    totalVotes: a.integer().required(),
+    serverTimestamp: a.datetime().required(),
+  }),
+  AccountDeletionRequestResult: a.customType({
+    accepted: a.boolean().required(),
+    serverTimestamp: a.datetime().required(),
+  }),
+  RecordEngagementInput: a.customType({
+    eventId: a.id().required(),
+    sessionId: a.id().required(),
+    name: a.enum([
+      'SESSION_STARTED',
+      'SUBSCRIPTION_GATE_VIEWED',
+      'TODAY_VIEWED',
+      'HABITS_VIEWED',
+      'COMMUNITY_VIEWED',
+      'ACCOUNT_VIEWED',
+    ]),
+    occurredAt: a.datetime().required(),
+    appVersion: a.string(),
+  }),
+  RecordEngagementResult: a.customType({
+    accepted: a.boolean().required(),
+    duplicate: a.boolean().required(),
+    serverTimestamp: a.datetime().required(),
+  }),
 
   recordSnooze: a
     .mutation()
@@ -253,6 +652,7 @@ const schema = a.schema({
       revenueCatAppUserId: a.string().required(),
       originalAnonymousAppUserId: a.string(),
       timezone: a.string().required(),
+      creatorCode: a.string(),
     })
     .returns(a.ref('LinkRevenueCatResult'))
     .authorization((allow) => [allow.authenticated()])
@@ -270,6 +670,93 @@ const schema = a.schema({
     .returns(a.ref('PointTransactionPage'))
     .authorization((allow) => [allow.authenticated()])
     .handler(a.handler.function(accountApiFunction)),
+
+  getMyHabits: a
+    .query()
+    .returns(a.ref('HabitResult').array())
+    .authorization((allow) => [allow.authenticated()])
+    .handler(a.handler.function(habitApiFunction)),
+
+  saveMyHabit: a
+    .mutation()
+    .arguments({ input: a.ref('SaveHabitInput').required() })
+    .returns(a.ref('HabitResult'))
+    .authorization((allow) => [allow.authenticated()])
+    .handler(a.handler.function(habitApiFunction)),
+
+  archiveMyHabit: a
+    .mutation()
+    .arguments({ habitId: a.id().required() })
+    .returns(a.ref('ArchiveHabitResult'))
+    .authorization((allow) => [allow.authenticated()])
+    .handler(a.handler.function(habitApiFunction)),
+
+  reportHabitProgress: a
+    .mutation()
+    .arguments({ input: a.ref('HabitProgressInput').required() })
+    .returns(a.ref('HabitProgressResult'))
+    .authorization((allow) => [allow.authenticated()])
+    .handler(a.handler.function(habitApiFunction)),
+
+  listMySyncedAlarms: a
+    .query()
+    .returns(a.ref('SyncedAlarmResult').array())
+    .authorization((allow) => [allow.authenticated()])
+    .handler(a.handler.function(accountApiFunction)),
+
+  saveMySyncedAlarm: a
+    .mutation()
+    .arguments({ input: a.ref('SaveSyncedAlarmInput').required() })
+    .returns(a.ref('SyncedAlarmResult'))
+    .authorization((allow) => [allow.authenticated()])
+    .handler(a.handler.function(accountApiFunction)),
+
+  archiveMySyncedAlarm: a
+    .mutation()
+    .arguments({ alarmId: a.id().required(), expectedVersion: a.integer().required() })
+    .returns(a.ref('ArchiveSyncedAlarmResult'))
+    .authorization((allow) => [allow.authenticated()])
+    .handler(a.handler.function(accountApiFunction)),
+
+  recordWakeCompletion: a
+    .mutation()
+    .arguments({ input: a.ref('RecordWakeCompletionInput').required() })
+    .returns(a.ref('RecordWakeCompletionResult'))
+    .authorization((allow) => [allow.authenticated()])
+    .handler(a.handler.function(accountApiFunction)),
+
+  getMyAccountabilityStatistics: a
+    .query()
+    .returns(a.ref('AccountabilityStatisticsResult'))
+    .authorization((allow) => [allow.authenticated()])
+    .handler(a.handler.function(accountApiFunction)),
+
+  getCommunityDashboard: a
+    .query()
+    .returns(a.ref('CommunityDashboardResult'))
+    .authorization((allow) => [allow.authenticated()])
+    .handler(a.handler.function(accountApiFunction)),
+
+  castMyDailyCharityVote: a
+    .mutation()
+    .arguments({ charityId: a.id().required() })
+    .returns(a.ref('CommunityVoteResult'))
+    .authorization((allow) => [allow.authenticated()])
+    .handler(a.handler.function(accountApiFunction)),
+
+  recordMyEngagement: a
+    .mutation()
+    .arguments({ input: a.ref('RecordEngagementInput').required() })
+    .returns(a.ref('RecordEngagementResult'))
+    .authorization((allow) => [allow.authenticated()])
+    .handler(a.handler.function(accountApiFunction)),
+
+  requestMyAccountDeletion: a
+    .mutation()
+    .arguments({ confirmation: a.string().required() })
+    .returns(a.ref('AccountDeletionRequestResult'))
+    .authorization((allow) => [allow.authenticated()])
+    .handler(a.handler.function(requestAccountDeletionFunction)),
 
   rerunMonthlySettlement: a
     .mutation()

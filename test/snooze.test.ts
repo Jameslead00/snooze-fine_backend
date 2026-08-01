@@ -76,4 +76,20 @@ describe('record snooze', () => {
       recordSnooze(repository, { ...command, occurredAt: '2026-06-01T00:00:00.000Z' }, now),
     ).rejects.toMatchObject({ code: 'STALE_EVENT' } satisfies Partial<DomainError>);
   });
+
+  it('rejects a stale or expired point period even when the subscription remains active', async () => {
+    const repository = await eligibleRepository();
+    const account = repository.accounts.get('cognito-1');
+    if (account?.activePeriodId === undefined) throw new Error('fixture account missing');
+    const period = repository.periods.get(account.activePeriodId);
+    if (period === undefined) throw new Error('fixture period missing');
+    repository.periods.set(period.id, {
+      ...period,
+      status: 'EXPIRED',
+    });
+
+    await expect(recordSnooze(repository, command, now)).rejects.toMatchObject({
+      code: 'NO_ACTIVE_POINT_PERIOD',
+    } satisfies Partial<DomainError>);
+  });
 });

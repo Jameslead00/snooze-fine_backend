@@ -31,6 +31,8 @@ npm run sandbox -- --profile "$AWS_PROFILE"
 ```
 
 For a branch, create the secret in Amplify Console → Hosting → Secrets before branch deployment.
+The staging branch also requires the four Sign in with Apple secrets used by Cognito:
+`SIWA_CLIENT_ID`, `SIWA_KEY_ID`, `SIWA_PRIVATE_KEY`, and `SIWA_TEAM_ID`.
 After deployment:
 
 ```bash

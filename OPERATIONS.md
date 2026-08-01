@@ -1,8 +1,10 @@
 # Operations
 
-All examples require a generated `amplify_outputs.json`, short-lived AWS credentials for the
-target account, and an explicit environment. `SANDBOX` is the CLI default. Settlement mode is
-always `TEST`; no procedure in this document transfers money.
+All examples require a generated public `amplify_outputs.json`, the backend-only table mapping
+described in `README.md`, short-lived AWS credentials for the target account, and an explicit
+environment. Export `SNOOZEFINE_ADMIN_TABLES_PATH=./admin_tables.local.json` before using the
+admin CLI. `SANDBOX` is the CLI default. Settlement mode is always `TEST`; no procedure in this
+document transfers money.
 
 ## Fast health check
 
@@ -24,9 +26,8 @@ TEST MODE — EXPECTED DONATION ONLY — NO DONATION HAS BEEN PAID
    ID, and environment.
 2. In CloudWatch Logs, open `/aws/lambda/snoozefine-revenuecat-webhook...` and search the structured
    JSON logs for `eventId`. Logs intentionally omit the body and authorization header.
-3. In DynamoDB, open the physical `RevenueCatWebhookEvent` table named in
-   `amplify_outputs.json → custom.snoozefine.admin_tables.WEBHOOK_TABLE_NAME` and Get item by event
-   ID.
+3. In DynamoDB, open the physical `RevenueCatWebhookEvent` table named by
+   `WEBHOOK_TABLE_NAME` in the backend-only admin mapping and Get item by event ID.
 4. Inspect `status`, `processingError`, identity aliases, product/entitlements, timestamps,
    environment, and `payloadHash`.
 5. For unresolved events:

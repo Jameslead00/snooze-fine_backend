@@ -27,6 +27,7 @@ interface StoredSnooze {
 
 export class InMemoryRepository implements PlatformRepository {
   public readonly links = new Map<string, string>();
+  public readonly creatorAttributions = new Map<string, string>();
   public readonly webhooks = new Map<string, WebhookRecord>();
   public readonly subscriptions = new Map<string, SubscriptionState>();
   public readonly periods = new Map<string, PointPeriod>();
@@ -68,12 +69,20 @@ export class InMemoryRepository implements PlatformRepository {
       const { period, transaction } = input.allocation;
       this.periods.set(period.id, period);
       const previous = this.accounts.get(period.userId);
+      const currentPeriod =
+        previous?.activePeriodId === undefined
+          ? undefined
+          : this.periods.get(previous.activePeriodId);
+      const shouldActivatePeriod =
+        currentPeriod === undefined || period.periodStart > currentPeriod.periodStart;
       const account: PointAccount = {
         id: period.userId,
         userId: period.userId,
         environment: period.environment,
-        currentBalance: period.initialAllocation,
-        activePeriodId: period.id,
+        currentBalance: shouldActivatePeriod
+          ? period.initialAllocation
+          : (previous?.currentBalance ?? period.initialAllocation),
+        activePeriodId: shouldActivatePeriod ? period.id : previous?.activePeriodId,
         lifetimeAllocated: (previous?.lifetimeAllocated ?? 0) + period.initialAllocation,
         lifetimeDeducted: previous?.lifetimeDeducted ?? 0,
         version: (previous?.version ?? 0) + 1,
@@ -82,7 +91,7 @@ export class InMemoryRepository implements PlatformRepository {
       this.accounts.set(period.userId, account);
       this.transactions.set(transaction.id, {
         ...transaction,
-        balanceAfter: account.currentBalance,
+        balanceAfter: period.initialAllocation,
       });
       allocatedPoints = period.initialAllocation;
     }
@@ -112,7 +121,13 @@ export class InMemoryRepository implements PlatformRepository {
       throw new DomainError('INELIGIBLE_SUBSCRIPTION');
     }
     const period = this.periods.get(account.activePeriodId);
-    if (period === undefined || period.userId !== command.userId) {
+    if (
+      period === undefined ||
+      period.userId !== command.userId ||
+      period.environment !== account.environment ||
+      period.status !== 'ACTIVE' ||
+      period.periodEnd <= now
+    ) {
       throw new DomainError('NO_ACTIVE_POINT_PERIOD');
     }
     const deducted = Math.min(PLATFORM_CONFIG.snoozePointDeduction, account.currentBalance);
@@ -146,7 +161,7 @@ export class InMemoryRepository implements PlatformRepository {
       pointPeriodId: period.id,
       amount: -deducted,
       transactionType: 'SNOOZE_DEDUCTION',
-      reasonCode: 'PAID_SNOOZE',
+      reasonCode: 'DISCIPOINT_SNOOZE',
       source: 'IOS_APP',
       idempotencyKey: key,
       sourceEventId: command.snoozeEventId,
@@ -168,6 +183,7 @@ export class InMemoryRepository implements PlatformRepository {
     revenueCatAppUserId: string;
     originalAnonymousAppUserId: string | undefined;
     timezone: string;
+    creatorCode: string | undefined;
     now: string;
   }): Promise<{ linked: boolean; duplicate: boolean }> {
     const stableOwner = this.links.get(input.revenueCatAppUserId);
@@ -186,6 +202,9 @@ export class InMemoryRepository implements PlatformRepository {
     if (input.originalAnonymousAppUserId !== undefined) {
       this.links.set(input.originalAnonymousAppUserId, input.userId);
     }
+    if (input.creatorCode !== undefined && !this.creatorAttributions.has(input.userId)) {
+      this.creatorAttributions.set(input.userId, input.creatorCode);
+    }
     return { linked: true, duplicate };
   }
 
@@ -195,7 +214,20 @@ export class InMemoryRepository implements PlatformRepository {
     const period =
       account?.activePeriodId === undefined ? undefined : this.periods.get(account.activePeriodId);
     const balance = account?.currentBalance ?? 0;
+    const isEligible =
+      account?.activePeriodId !== undefined &&
+      subscription !== undefined &&
+      ['ACTIVE', 'GRACE_PERIOD', 'BILLING_ISSUE', 'CANCELLED_PENDING_EXPIRY'].includes(
+        subscription.status,
+      ) &&
+      subscription.currentPeriodEnd > now &&
+      period !== undefined &&
+      period.userId === userId &&
+      period.environment === account.environment &&
+      period.status === 'ACTIVE' &&
+      period.periodEnd > now;
     return {
+      isEligible,
       officialBalance: balance,
       activePointPeriodId: period?.id,
       initialAllocation: period?.initialAllocation ?? 0,

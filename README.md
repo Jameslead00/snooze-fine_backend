@@ -7,6 +7,8 @@ The backend authenticates users with Cognito, receives authenticated RevenueCat 
 allocates one 2,000-point ledger entry per eligible subscription period, accepts idempotent
 snooze deductions through AppSync, returns the official server balance/history, and calculates
 calendar-month test settlements. It does **not** transfer money or call a charity/payment API.
+Authenticated first-party engagement events provide a minimal retention signal without accepting a
+client user ID, advertising identifier, or free-form analytics properties.
 
 ## Prerequisites
 
@@ -40,6 +42,7 @@ npm run admin:summary -- --environment SANDBOX
 npm run admin:unresolved-webhooks -- --environment SANDBOX
 npm run admin:settlement -- --month 2026-08 --environment SANDBOX
 npm run admin:adjust -- --user-id <sub> --amount -25 --reason "support case 123" --idempotency-key <unique-key> --environment SANDBOX
+npm run admin:engagement -- --days 30 --environment SANDBOX
 npm run seed -- --user-id <cognito-sub>
 ```
 
@@ -85,24 +88,32 @@ as part of environment cleanup.
 
 ## Branch deployment
 
-1. In AWS Amplify, create a Gen 2 app and connect this backend-only repository/branch.
-2. Under Hosting → Secrets, create `REVENUECAT_WEBHOOK_AUTH_TOKEN` for the branch. Do not add the
-   value as a normal environment variable.
-3. Set the non-secret build variable `SNOOZEFINE_ENVIRONMENT` to `SANDBOX` for staging. Set it to
-   `PRODUCTION` only on the production branch.
-4. Let Amplify deploy the branch, or run the current Gen 2 pipeline command from authenticated CI:
+1. In AWS Amplify, create or select the Gen 2 app and connect this backend-only repository.
+2. Create a branch named `staging` for the persistent test environment. Do not connect the
+   production branch yet.
+3. Under Hosting → Secrets, create these five values for the `staging` branch. Reusing the current
+   non-production values is allowed while staging remains a trusted test environment:
+   `SIWA_CLIENT_ID`, `SIWA_KEY_ID`, `SIWA_PRIVATE_KEY`, `SIWA_TEAM_ID`, and
+   `REVENUECAT_WEBHOOK_AUTH_TOKEN`. Do not add them as ordinary environment variables or commit
+   them to this repository.
+4. Set the non-secret build variable `SNOOZEFINE_ENVIRONMENT` to `SANDBOX` for staging. Set it to
+   `PRODUCTION` only on the future production branch.
+5. Let Amplify deploy the branch, or run the current Gen 2 pipeline command from authenticated CI:
 
 ```bash
 export CI=1
 npm ci
-npm run deploy -- --branch main --app-id <amplify-app-id>
-npm run outputs -- --branch main --app-id <amplify-app-id>
+npm run deploy -- --branch staging --app-id <amplify-app-id>
+npm run outputs -- --branch staging --app-id <amplify-app-id>
 ```
 
 `pipeline-deploy` is a CI/branch workflow, not a substitute for the personal `ampx sandbox`
 workflow. The generated output includes the AppSync/Auth configuration, webhook URL, deployment
-environment, test settlement marker, and physical DynamoDB table names used by the credentialed
-admin CLI.
+environment, and test settlement marker. Physical DynamoDB table names stay in the backend-only
+admin mapping described below and must not be added to the public output bundled with iOS.
+
+See `STAGING_DEPLOYMENT.md` for the complete staging checklist, RevenueCat routing, and iOS output
+handoff.
 
 ## Create an administrator
 
@@ -119,17 +130,26 @@ writes use the AWS-credentialed CLI and DynamoDB transactions.
 
 ## Admin CLI
 
-The CLI uses the default AWS SDK credential chain plus table names in `amplify_outputs.json`.
-Point it at another outputs file with `AMPLIFY_OUTPUTS_PATH`.
+The CLI uses the default AWS SDK credential chain. Physical DynamoDB table names are deliberately
+kept out of the public `amplify_outputs.json`, because that same file is bundled with iOS. Copy
+`admin_tables.example.json` to the gitignored `admin_tables.local.json`, replace each value with
+the matching physical table name from the deployed Amplify sandbox, and point the CLI at it.
+Never copy this backend-only mapping into the iOS repository or commit it.
 
 ```bash
 export AWS_PROFILE=<your-profile>
 export AWS_REGION=eu-central-1
+export SNOOZEFINE_ADMIN_TABLES_PATH=./admin_tables.local.json
 
 npm run admin:summary -- --environment SANDBOX
 npm run admin:unresolved-webhooks -- --environment SANDBOX
+npm run admin:engagement -- --days 30 --environment SANDBOX
 npm run admin:settlement -- --month 2026-08 --environment SANDBOX
 ```
+
+`SNOOZEFINE_ADMIN_TABLES_JSON` may be used instead by secured CI. A legacy backend output that
+already contains `custom.snoozefine.admin_tables` remains supported, but new public outputs must
+not add it. Point at another public outputs file with `AMPLIFY_OUTPUTS_PATH`.
 
 All summary and settlement output says **TEST MODE**, **expected donation**, and **not yet paid**.
 Production is never selected implicitly; pass `--environment PRODUCTION`. A production admin
@@ -165,6 +185,10 @@ All non-secret business constants live in `amplify/shared/config.ts`:
 - donation rate: 1,000 micro-USD per point
 - settlement mode: `TEST`
 
+Engagement analytics is intentionally allow-listed to session start and the core subscription,
+Today, Habits, Community, and Account surfaces. The AppSync resolver injects the Cognito `sub` and
+rejects stale/future timestamps; event UUIDs are idempotent and account-bound.
+
 Financial calculations use safe integers. Settlement `expectedDonationMicroUsd` is stored and
 returned as a decimal string because GraphQL `Int` is limited to signed 32-bit values; it still
 represents an integer number of micro-dollars and is never calculated with floating point.
@@ -183,5 +207,5 @@ represents an integer number of micro-dollars and is never calculated with float
 - **Wrong totals:** verify the command's `--environment`; sandbox and production are intentionally
   isolated.
 
-See `ARCHITECTURE.md`, `REVENUECAT_SETUP.md`, `SWIFT_INTEGRATION.md`, and `OPERATIONS.md` before a
-staging rollout.
+See `ARCHITECTURE.md`, `REVENUECAT_SETUP.md`, `SWIFT_INTEGRATION.md`, `OPERATIONS.md`, and
+`COMMUNITY_SANDBOX_RUNBOOK.md` before a staging rollout.

@@ -4,6 +4,8 @@ export const PLATFORM_CONFIG = {
   legacySnoozeProductId: 'snooze_1',
   monthlyPointAllocation: 2_000,
   snoozePointDeduction: 25,
+  habitMissPointDeduction: 25,
+  habitSettlementLookbackDays: 35,
   microUsdPerPoint: 1_000,
   settlementMode: 'TEST',
   settlementCalculationVersion: 'v1',

@@ -8,28 +8,36 @@ flowchart LR
   APPSYNC --> USERFN["Account, link, and snooze Lambdas"]
   RC["RevenueCat"] -->|"POST + exact Authorization header"| HTTP["API Gateway HTTP API"]
   HTTP --> WEBHOOKFN["RevenueCat webhook Lambda"]
-  SCHEDULE["EventBridge schedule<br/>day 1, 02:00 UTC"] --> SETTLEFN["Test settlement Lambda"]
+  SCHEDULE["EventBridge schedules"] --> SETTLEFN["Test settlement Lambda"]
+  SCHEDULE --> HABITFN["Habit enforcement Lambda"]
   USERFN --> DDB[("Amplify Data DynamoDB tables")]
   WEBHOOKFN --> DDB
   SETTLEFN --> DDB
+  HABITFN --> DDB
   ADMIN["AWS-credentialed admin CLI"] --> DDB
 ```
 
 `amplify/backend.ts` composes Cognito, AppSync, Amplify Functions, the HTTP API, the schedule, table
-permissions, function table-name configuration, and generated client/admin outputs.
+permissions, function table-name configuration, and generated public client outputs. Physical
+table mappings used by the admin CLI remain backend-only and are never copied into iOS.
 
 ## Trust boundaries and authorization
 
-| Surface                   | Caller                                     | Authorization                                         | Data authority                                                                  |
-| ------------------------- | ------------------------------------------ | ----------------------------------------------------- | ------------------------------------------------------------------------------- |
-| `linkRevenueCatCustomer`  | signed-in app user                         | Cognito/AppSync                                       | stable RevenueCat ID must equal token `sub`; alias IDs are conditionally unique |
-| `recordSnooze`            | signed-in app user                         | Cognito/AppSync                                       | user ID and 25-point amount are server-derived                                  |
-| `getMyPointAccount`       | signed-in app user                         | Cognito/AppSync                                       | function queries only token `sub` + deployment environment                      |
-| `listMyPointTransactions` | signed-in app user                         | Cognito/AppSync                                       | partition is token `sub:environment`                                            |
-| generated model reads     | `ADMINS` only (plus owner read of profile) | Cognito group rules                                   | no generated client model writes exist                                          |
-| RevenueCat webhook        | RevenueCat server                          | exact header, constant-time SHA-256 digest comparison | lifecycle fields come from validated webhook                                    |
-| monthly settlement        | EventBridge or `ADMINS` custom mutation    | schedule / Cognito group                              | always calculation-only TEST mode                                               |
-| admin CLI                 | operator                                   | AWS SDK credential chain/IAM                          | direct, auditable transactional operations                                      |
+| Surface                    | Caller                                     | Authorization                                         | Data authority                                                                  |
+| -------------------------- | ------------------------------------------ | ----------------------------------------------------- | ------------------------------------------------------------------------------- |
+| `linkRevenueCatCustomer`   | signed-in app user                         | Cognito/AppSync                                       | stable RevenueCat ID must equal token `sub`; alias IDs are conditionally unique |
+| `recordSnooze`             | signed-in app user                         | Cognito/AppSync                                       | user ID and 25-point amount are server-derived                                  |
+| `getMyPointAccount`        | signed-in app user                         | Cognito/AppSync                                       | function queries only token `sub` + deployment environment                      |
+| `listMyPointTransactions`  | signed-in app user                         | Cognito/AppSync                                       | partition is token `sub:environment`                                            |
+| habit operations           | signed-in app user                         | Cognito/AppSync                                       | identity and penalty are server-derived; progress event IDs are idempotent      |
+| sync/statistics operations | signed-in app user                         | Cognito/AppSync                                       | account-scoped alarm/wake records; AlarmKit remains device-local                |
+| community vote             | eligible signed-in app user                | Cognito/AppSync                                       | one transactionally enforced vote per user-local day                            |
+| `recordMyEngagement`       | signed-in app user                         | Cognito/AppSync                                       | allow-listed event names; token `sub`; no arbitrary properties                  |
+| account deletion request   | signed-in app user                         | Cognito/AppSync                                       | queues an auditable owner cleanup request before Cognito self-deletion          |
+| generated model reads      | `ADMINS` only (plus owner read of profile) | Cognito group rules                                   | no generated client model writes exist                                          |
+| RevenueCat webhook         | RevenueCat server                          | exact header, constant-time SHA-256 digest comparison | lifecycle fields come from validated webhook                                    |
+| monthly settlement         | EventBridge or `ADMINS` custom mutation    | schedule / Cognito group                              | always calculation-only TEST mode                                               |
+| admin CLI                  | operator                                   | AWS SDK credential chain/IAM                          | direct, auditable transactional operations                                      |
 
 No client operation accepts a user ID, point amount, resulting balance, entitlement status, or
 subscription status.
@@ -125,6 +133,25 @@ integer transaction:
 Normal clients receive no create/update/delete authorization for ledger or projection models.
 `PointAccount` is a concurrency-controlled projection; `PointPeriod.currentRemaining` supports
 period settlement. `OPERATIONS.md` contains reconciliation steps.
+
+## Phase 2 habit accountability
+
+Habit definitions, occurrences, and progress events are scoped to the authenticated Cognito user
+and environment. The client may choose a goal, schedule, deadline, and progress amount, but it
+cannot choose the server penalty or submit a user ID. Progress event UUIDs are account-bound and
+idempotent. A 15-minute EventBridge schedule pages through every active sandbox habit, evaluates
+timezone-aware due dates, and transactionally records at most one `HABIT_DEDUCTION` per missed
+occurrence. Ineligible periods are recorded as `SKIPPED_INELIGIBLE` and never charged.
+
+## Retention analytics boundary
+
+The authenticated engagement stream exists only to measure core product retention. It accepts a
+random event UUID, random app-session UUID, one allow-listed event name, occurrence timestamp, and
+optional app version. The AppSync function injects the Cognito `sub` and deployment environment,
+rejects timestamps outside the bounded window, and conditionally inserts the event once. There is
+no advertising SDK, cross-app identifier, IP/device fingerprint field, free-form property bag, or
+client-controlled user identity. Analytics failures never block authentication, alarms, points,
+or navigation.
 
 ## Settlement rule (calculation version `v1`)
 

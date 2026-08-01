@@ -12,6 +12,7 @@ import { DynamoPlatformRepository } from '../amplify/shared/dynamo-repository.js
 import { runSettlement } from '../amplify/shared/domain.js';
 import { expectedDonationMicroUsd, formatMicroUsd } from '../amplify/shared/money.js';
 import { sha256 } from '../amplify/shared/security.js';
+import { summarizeEngagement } from './engagement-summary.js';
 import {
   loadPlatformOutputs,
   monthCutoff,
@@ -127,6 +128,27 @@ async function unresolvedWebhooks(environment: 'SANDBOX' | 'PRODUCTION'): Promis
     .sort((a, b) => String(b.receivedAt).localeCompare(String(a.receivedAt)))
     .forEach((event) => console.log(JSON.stringify(event)));
   console.log(`Unresolved ${environment} events: ${events.length}`);
+}
+
+async function engagement(
+  environment: 'SANDBOX' | 'PRODUCTION',
+  options: ReturnType<typeof parseOptions>,
+): Promise<void> {
+  const rawDays = stringOption(options, 'days', '30');
+  const days = Number(rawDays);
+  if (!Number.isInteger(days) || days < 1 || days > 365) {
+    throw new Error('--days must be an integer from 1 to 365');
+  }
+  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1_000).toISOString();
+  const { tables } = await loadPlatformOutputs();
+  const events = await scanAll({
+    TableName: tables.engagement,
+    FilterExpression: '#environment = :environment AND receivedAt >= :since',
+    ExpressionAttributeNames: { '#environment': 'environment', '#name': 'name' },
+    ExpressionAttributeValues: { ':environment': environment, ':since': since },
+    ProjectionExpression: 'userId, environment, sessionId, #name, receivedAt',
+  });
+  console.log(JSON.stringify(summarizeEngagement(events, environment, since), null, 2));
 }
 
 async function settlement(
@@ -367,6 +389,7 @@ async function main(): Promise<void> {
   const environment = requestedEnvironment(options);
   if (command === 'summary') await summary(environment);
   else if (command === 'unresolved-webhooks') await unresolvedWebhooks(environment);
+  else if (command === 'engagement') await engagement(environment, options);
   else if (command === 'settlement') {
     await settlement(environment, stringOption(options, 'month'));
   } else if (command === 'adjust') {
@@ -375,7 +398,7 @@ async function main(): Promise<void> {
     await ledger(environment, stringOption(options, 'user-id'));
   } else {
     throw new Error(
-      'Usage: admin.ts <summary|unresolved-webhooks|settlement|adjust|ledger> [options]',
+      'Usage: admin.ts <summary|unresolved-webhooks|engagement|settlement|adjust|ledger> [options]',
     );
   }
 }

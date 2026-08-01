@@ -307,12 +307,24 @@ export class DynamoPlatformRepository implements PlatformRepository {
       const currentAccountItem = await this.getItem(this.tables.account, id);
       const currentAccount =
         currentAccountItem === undefined ? undefined : asAccount(currentAccountItem);
+      const currentPeriodItem =
+        currentAccount?.activePeriodId === undefined
+          ? undefined
+          : await this.getItem(this.tables.period, currentAccount.activePeriodId);
+      const currentPeriod =
+        currentPeriodItem === undefined ? undefined : asPeriod(currentPeriodItem);
+      const shouldActivatePeriod =
+        currentPeriod === undefined || allocation.period.periodStart > currentPeriod.periodStart;
       const nextAccount: PointAccount = {
         id,
         userId: allocation.period.userId,
         environment: allocation.period.environment,
-        currentBalance: allocation.period.initialAllocation,
-        activePeriodId: allocation.period.id,
+        currentBalance: shouldActivatePeriod
+          ? allocation.period.initialAllocation
+          : (currentAccount?.currentBalance ?? allocation.period.initialAllocation),
+        activePeriodId: shouldActivatePeriod
+          ? allocation.period.id
+          : currentAccount?.activePeriodId,
         lifetimeAllocated:
           (currentAccount?.lifetimeAllocated ?? 0) + allocation.period.initialAllocation,
         lifetimeDeducted: currentAccount?.lifetimeDeducted ?? 0,
@@ -321,7 +333,7 @@ export class DynamoPlatformRepository implements PlatformRepository {
       };
       const transaction = {
         ...allocation.transaction,
-        balanceAfter: nextAccount.currentBalance,
+        balanceAfter: allocation.period.initialAllocation,
         metadataJson: parseMetadata(allocation.transaction.metadataJson),
         updatedAt: now,
       };
@@ -454,7 +466,12 @@ export class DynamoPlatformRepository implements PlatformRepository {
       const periodItem = await this.getItem(this.tables.period, account.activePeriodId);
       if (periodItem === undefined) throw new DomainError('NO_ACTIVE_POINT_PERIOD');
       const period = asPeriod(periodItem);
-      if (period.userId !== command.userId || period.environment !== this.environment) {
+      if (
+        period.userId !== command.userId ||
+        period.environment !== this.environment ||
+        period.status !== 'ACTIVE' ||
+        period.periodEnd <= now
+      ) {
         throw new DomainError('NO_ACTIVE_POINT_PERIOD');
       }
 
@@ -511,7 +528,7 @@ export class DynamoPlatformRepository implements PlatformRepository {
                     pointPeriodId: period.id,
                     amount: -deducted,
                     transactionType: 'SNOOZE_DEDUCTION',
-                    reasonCode: 'PAID_SNOOZE',
+                    reasonCode: 'DISCIPOINT_SNOOZE',
                     source: 'IOS_APP',
                     idempotencyKey,
                     sourceEventId: command.snoozeEventId,
@@ -577,6 +594,7 @@ export class DynamoPlatformRepository implements PlatformRepository {
     revenueCatAppUserId: string;
     originalAnonymousAppUserId: string | undefined;
     timezone: string;
+    creatorCode: string | undefined;
     now: string;
   }): Promise<{ linked: boolean; duplicate: boolean }> {
     const ids = [
@@ -623,8 +641,11 @@ export class DynamoPlatformRepository implements PlatformRepository {
       Update: {
         TableName: this.tables.userProfile,
         Key: { id: input.userId },
-        UpdateExpression:
-          'SET userId = :userId, #timezone = :timezone, createdAt = if_not_exists(createdAt, :now), updatedAt = :now',
+        UpdateExpression: `SET userId = :userId, #timezone = :timezone${
+          input.creatorCode === undefined
+            ? ''
+            : ', creatorCode = if_not_exists(creatorCode, :creatorCode)'
+        }, createdAt = if_not_exists(createdAt, :now), updatedAt = :now`,
         ConditionExpression: 'attribute_not_exists(id) OR userId = :userId',
         ExpressionAttributeNames: {
           '#timezone': 'timezone',
@@ -632,6 +653,7 @@ export class DynamoPlatformRepository implements PlatformRepository {
         ExpressionAttributeValues: {
           ':userId': input.userId,
           ':timezone': input.timezone,
+          ...(input.creatorCode === undefined ? {} : { ':creatorCode': input.creatorCode }),
           ':now': input.now,
         },
       },
@@ -661,7 +683,20 @@ export class DynamoPlatformRepository implements PlatformRepository {
         : await this.getItem(this.tables.period, account.activePeriodId);
     const parsedPeriod = period === undefined ? undefined : asPeriod(period);
     const balance = Math.max(0, account?.currentBalance ?? 0);
+    const isEligible =
+      account?.activePeriodId !== undefined &&
+      subscription !== undefined &&
+      ['ACTIVE', 'GRACE_PERIOD', 'BILLING_ISSUE', 'CANCELLED_PENDING_EXPIRY'].includes(
+        subscription.status,
+      ) &&
+      subscription.currentPeriodEnd > now &&
+      parsedPeriod !== undefined &&
+      parsedPeriod.userId === userId &&
+      parsedPeriod.environment === this.environment &&
+      parsedPeriod.status === 'ACTIVE' &&
+      parsedPeriod.periodEnd > now;
     return {
+      isEligible,
       officialBalance: balance,
       activePointPeriodId: parsedPeriod?.id,
       initialAllocation: parsedPeriod?.initialAllocation ?? 0,

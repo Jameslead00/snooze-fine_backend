@@ -5,9 +5,11 @@ export type SubscriptionStatus =
 
 export type WebhookStatus = 'PROCESSED' | 'UNRESOLVED' | 'IGNORED' | 'FAILED';
 
-export type PointTransactionType = 'MONTHLY_ALLOCATION' | 'SNOOZE_DEDUCTION' | 'ADMIN_ADJUSTMENT';
+export type PointTransactionType =
+  'MONTHLY_ALLOCATION' | 'SNOOZE_DEDUCTION' | 'HABIT_DEDUCTION' | 'ADMIN_ADJUSTMENT';
 
-export type PointTransactionSource = 'REVENUECAT_WEBHOOK' | 'IOS_APP' | 'ADMIN';
+export type PointTransactionSource =
+  'REVENUECAT_WEBHOOK' | 'IOS_APP' | 'ACCOUNTABILITY_ENGINE' | 'ADMIN';
 
 export interface RevenueCatEvent {
   id: string;
@@ -121,6 +123,7 @@ export interface SnoozeResult {
 }
 
 export interface PointAccountView {
+  isEligible: boolean;
   officialBalance: number;
   activePointPeriodId: string | undefined;
   initialAllocation: number;
