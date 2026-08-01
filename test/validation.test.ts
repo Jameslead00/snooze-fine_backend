@@ -1,5 +1,26 @@
 import { describe, expect, it } from 'vitest';
-import { parseRevenueCatPayload } from '../amplify/shared/validation.js';
+import {
+  linkRevenueCatArgumentsSchema,
+  parseRevenueCatPayload,
+} from '../amplify/shared/validation.js';
+
+describe('Link argument validation', () => {
+  it('treats GraphQL null optional fields as absent', () => {
+    expect(
+      linkRevenueCatArgumentsSchema.parse({
+        revenueCatAppUserId: 'cognito-sub',
+        originalAnonymousAppUserId: null,
+        timezone: 'Europe/Zurich',
+        creatorCode: null,
+      }),
+    ).toEqual({
+      revenueCatAppUserId: 'cognito-sub',
+      originalAnonymousAppUserId: undefined,
+      timezone: 'Europe/Zurich',
+      creatorCode: undefined,
+    });
+  });
+});
 
 describe('RevenueCat payload validation', () => {
   it('accepts RevenueCat dashboard TEST events with null entitlement_ids', () => {

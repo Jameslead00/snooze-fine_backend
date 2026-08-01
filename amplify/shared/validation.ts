@@ -113,12 +113,18 @@ export const recordSnoozeArgumentsSchema = z.object({
 
 export const linkRevenueCatArgumentsSchema = z.object({
   revenueCatAppUserId: z.string().min(1).max(512),
-  originalAnonymousAppUserId: z.string().min(1).max(512).optional(),
+  originalAnonymousAppUserId: z
+    .string()
+    .min(1)
+    .max(512)
+    .nullish()
+    .transform((value) => value ?? undefined),
   timezone: z.string().min(1).max(100),
   creatorCode: z
     .string()
     .regex(/^[A-Z0-9]{1,24}$/)
-    .optional(),
+    .nullish()
+    .transform((value) => value ?? undefined),
 });
 
 export const listTransactionsArgumentsSchema = z.object({
