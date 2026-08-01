@@ -30,11 +30,13 @@ const backend = defineBackend({
   revenueCatWebhook,
 });
 
-// Amplify omits AttributeDataType for the standard email schema attribute. Cognito accepts
-// that on user-pool creation but rejects it during an in-place update. Preserve the existing
-// immutable schema while making subsequent sandbox updates valid.
+// Cognito treats required user-pool attributes as immutable. Amplify's generated template
+// includes a one-item email schema, while an existing pool also has Cognito's complete set of
+// standard attributes. Re-sending that partial Schema during an in-place update makes Cognito
+// interpret the request as a required-attribute change and fail with
+// "Required custom attributes are not supported currently." Keep the deployed schema intact.
 const cfnUserPool = backend.auth.resources.cfnResources.cfnUserPool;
-cfnUserPool.addPropertyOverride('Schema.0.AttributeDataType', 'String');
+cfnUserPool.addPropertyDeletionOverride('Schema');
 
 const tables = backend.data.resources.tables;
 const requireTable = (name: string) => {
