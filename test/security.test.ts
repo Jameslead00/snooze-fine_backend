@@ -6,6 +6,11 @@ describe('RevenueCat webhook authorization', () => {
     expect(constantTimeTokenMatches('Bearer webhook-secret', 'Bearer webhook-secret')).toBe(true);
   });
 
+  it('accepts equivalent bearer formatting and surrounding whitespace', () => {
+    expect(constantTimeTokenMatches('Bearer webhook-secret', 'webhook-secret')).toBe(true);
+    expect(constantTimeTokenMatches('  bearer webhook-secret  ', ' webhook-secret ')).toBe(true);
+  });
+
   it('rejects missing and invalid tokens', () => {
     expect(constantTimeTokenMatches('Bearer wrong', 'Bearer webhook-secret')).toBe(false);
     expect(constantTimeTokenMatches(undefined, 'Bearer webhook-secret')).toBe(false);
