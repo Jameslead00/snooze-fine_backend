@@ -156,6 +156,13 @@ function validateHabit(command: SaveHabitCommand): void {
     throw new DomainError('INVALID_HABIT_TARGET');
   }
   if (
+    !Number.isInteger(command.stepValue) ||
+    command.stepValue < 1 ||
+    command.stepValue > command.targetValue
+  ) {
+    throw new DomainError('INVALID_HABIT_STEP');
+  }
+  if (
     command.weekdays.length === 0 ||
     command.weekdays.length > 7 ||
     command.weekdays.some((day) => !Number.isInteger(day) || day < 1 || day > 7) ||

@@ -14,6 +14,7 @@ export interface HabitDefinition {
   kind: HabitKind;
   title: string;
   targetValue: number;
+  stepValue: number;
   unit: HabitUnit;
   weekdays: number[];
   deadlineMinutes: number;
@@ -54,6 +55,7 @@ export interface SaveHabitCommand {
   kind: SavableHabitKind;
   title: string;
   targetValue: number;
+  stepValue: number;
   unit: HabitUnit;
   weekdays: number[];
   deadlineMinutes: number;
@@ -92,4 +94,17 @@ export interface HabitView extends HabitDefinition {
   todayProgress: number;
   todayStatus: HabitOccurrenceStatus | 'NOT_SCHEDULED';
   todayDueAt: string | undefined;
+}
+
+export function defaultHabitStepValue(kind: HabitKind): number {
+  switch (kind) {
+    case 'WATER':
+      return 250;
+    case 'READING':
+    case 'MEDITATION':
+      return 10;
+    case 'BED':
+    case 'CUSTOM':
+      return 1;
+  }
 }

@@ -31,6 +31,7 @@ const publicHabit = (habit: Awaited<ReturnType<typeof habitDashboard>>[number]) 
   kind: habit.kind,
   title: habit.title,
   targetValue: habit.targetValue,
+  stepValue: habit.stepValue,
   unit: habit.unit,
   weekdays: habit.weekdays,
   deadlineMinutes: habit.deadlineMinutes,

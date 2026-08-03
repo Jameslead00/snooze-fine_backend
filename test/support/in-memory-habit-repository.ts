@@ -44,6 +44,7 @@ export class InMemoryHabitRepository implements HabitRepository {
       kind: command.kind,
       title: command.title,
       targetValue: command.targetValue,
+      stepValue: command.stepValue,
       unit: command.unit,
       weekdays: command.weekdays,
       deadlineMinutes: command.deadlineMinutes,

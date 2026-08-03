@@ -339,23 +339,24 @@ async function seedVotes(
 }
 
 async function recalculateBallot(
-  tableName: string,
+  voteTableName: string,
+  ballotTableName: string,
   ballotId: string,
   charityIds: string[],
   now: string,
 ): Promise<{ totalVotes: number; tallies: Record<string, number> }> {
-  const votes = await queryAll(tableName, 'byBallotAndCreatedAt', 'ballotId', ballotId);
+  const votes = await queryAll(voteTableName, 'byBallotAndCreatedAt', 'ballotId', ballotId);
   const tallies = Object.fromEntries(charityIds.map((charityId) => [charityId, 0]));
   for (const vote of votes) {
     const charityId = typeof vote.charityId === 'string' ? vote.charityId : undefined;
     if (charityId !== undefined && tallies[charityId] !== undefined) tallies[charityId] += 1;
   }
   const current = (
-    await documentClient.send(new GetCommand({ TableName: tableName, Key: { id: ballotId } }))
+    await documentClient.send(new GetCommand({ TableName: ballotTableName, Key: { id: ballotId } }))
   ).Item;
   await documentClient.send(
     new UpdateCommand({
-      TableName: tableName,
+      TableName: ballotTableName,
       Key: { id: ballotId },
       UpdateExpression: 'SET tallies = :tallies, totalVotes = :totalVotes, #version = :version, updatedAt = :now',
       ExpressionAttributeNames: { '#version': 'version' },
@@ -428,7 +429,7 @@ async function main(): Promise<void> {
     timezone,
     now,
   );
-  const ballot = await recalculateBallot(ballotTable, ballotId, charityIds, now);
+  const ballot = await recalculateBallot(voteTable, ballotTable, ballotId, charityIds, now);
   const expectedDonationMicroUsd = remainingPoints * PLATFORM_CONFIG.microUsdPerPoint;
   console.log(
     JSON.stringify(

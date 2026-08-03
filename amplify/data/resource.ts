@@ -245,6 +245,9 @@ const schema = a.schema({
       kind: a.enum(['WATER', 'READING', 'MEDITATION', 'BED', 'CUSTOM']),
       title: a.string().required(),
       targetValue: a.integer().required(),
+      // Optional for backwards compatibility with habits created before
+      // per-habit progress steps were introduced.
+      stepValue: a.integer(),
       unit: a.enum(['MILLILITRES', 'MINUTES', 'COUNT', 'CHECKMARK']),
       weekdays: a.integer().array().required(),
       deadlineMinutes: a.integer().required(),
@@ -483,6 +486,7 @@ const schema = a.schema({
     kind: a.enum(['WATER', 'READING', 'MEDITATION', 'BED']),
     title: a.string().required(),
     targetValue: a.integer().required(),
+    stepValue: a.integer().required(),
     unit: a.enum(['MILLILITRES', 'MINUTES', 'COUNT', 'CHECKMARK']),
     weekdays: a.integer().array().required(),
     deadlineMinutes: a.integer().required(),
@@ -493,6 +497,7 @@ const schema = a.schema({
     kind: a.string().required(),
     title: a.string().required(),
     targetValue: a.integer().required(),
+    stepValue: a.integer().required(),
     unit: a.string().required(),
     weekdays: a.integer().array().required(),
     deadlineMinutes: a.integer().required(),

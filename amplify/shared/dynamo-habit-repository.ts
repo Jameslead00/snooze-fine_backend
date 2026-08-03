@@ -11,6 +11,7 @@ import {
 import { PLATFORM_CONFIG, type RevenueCatEnvironment } from './config.js';
 import { DomainError } from './domain.js';
 import type { HabitRepository } from './habit-repository.js';
+import { defaultHabitStepValue } from './habit-types.js';
 import type {
   HabitDefinition,
   HabitOccurrence,
@@ -59,26 +60,36 @@ const accountId = (userId: string, environment: RevenueCatEnvironment): string =
 const subscriptionId = (userId: string, environment: RevenueCatEnvironment): string =>
   `${userId}:${PLATFORM_CONFIG.entitlementId}:${environment}`;
 
-const asHabit = (item: Record<string, unknown>): HabitDefinition => ({
-  id: String(item.id),
-  userId: String(item.userId),
-  environment: item.environment === 'PRODUCTION' ? 'PRODUCTION' : 'SANDBOX',
-  userEnvironment: String(item.userEnvironment),
-  environmentState: String(item.environmentState),
-  kind: String(item.kind) as HabitDefinition['kind'],
-  title: String(item.title),
-  targetValue: Number(item.targetValue),
-  unit: String(item.unit) as HabitDefinition['unit'],
-  weekdays: Array.isArray(item.weekdays) ? item.weekdays.map(Number) : [],
-  deadlineMinutes: Number(item.deadlineMinutes),
-  timezone: String(item.timezone),
-  penaltyPoints: Number(item.penaltyPoints),
-  startDate: String(item.startDate),
-  activeState: item.activeState === 'ARCHIVED' ? 'ARCHIVED' : 'ACTIVE',
-  version: Number(item.version),
-  createdAt: String(item.createdAt),
-  updatedAt: String(item.updatedAt),
-});
+const asHabit = (item: Record<string, unknown>): HabitDefinition => {
+  const kind = String(item.kind) as HabitDefinition['kind'];
+  const targetValue = Number(item.targetValue);
+  const storedStepValue = Number(item.stepValue);
+  const stepValue =
+    Number.isInteger(storedStepValue) && storedStepValue > 0
+      ? Math.min(storedStepValue, targetValue)
+      : Math.min(defaultHabitStepValue(kind), targetValue);
+  return {
+    id: String(item.id),
+    userId: String(item.userId),
+    environment: item.environment === 'PRODUCTION' ? 'PRODUCTION' : 'SANDBOX',
+    userEnvironment: String(item.userEnvironment),
+    environmentState: String(item.environmentState),
+    kind,
+    title: String(item.title),
+    targetValue,
+    stepValue,
+    unit: String(item.unit) as HabitDefinition['unit'],
+    weekdays: Array.isArray(item.weekdays) ? item.weekdays.map(Number) : [],
+    deadlineMinutes: Number(item.deadlineMinutes),
+    timezone: String(item.timezone),
+    penaltyPoints: Number(item.penaltyPoints),
+    startDate: String(item.startDate),
+    activeState: item.activeState === 'ARCHIVED' ? 'ARCHIVED' : 'ACTIVE',
+    version: Number(item.version),
+    createdAt: String(item.createdAt),
+    updatedAt: String(item.updatedAt),
+  };
+};
 
 const asOccurrence = (item: Record<string, unknown>): HabitOccurrence => ({
   id: String(item.id),
@@ -202,6 +213,7 @@ export class DynamoHabitRepository implements HabitRepository {
       kind: command.kind,
       title: command.title,
       targetValue: command.targetValue,
+      stepValue: command.stepValue,
       unit: command.unit,
       weekdays: command.weekdays,
       deadlineMinutes: command.deadlineMinutes,

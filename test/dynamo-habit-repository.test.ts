@@ -21,6 +21,7 @@ const habitItem = (id: string, updatedAt: string) => ({
   kind: 'WATER',
   title: `Habit ${id}`,
   targetValue: 2_000,
+  stepValue: 250,
   unit: 'MILLILITRES',
   weekdays: [1, 2, 3, 4, 5, 6, 7],
   deadlineMinutes: 1_320,

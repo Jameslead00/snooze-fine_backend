@@ -56,6 +56,7 @@ const tableMapping = {
 describe('backend-only admin configuration', () => {
   it('loads tables separately from public Amplify outputs', async () => {
     process.env.AMPLIFY_OUTPUTS_PATH = await publicOutputsPath();
+    delete process.env.SNOOZEFINE_ADMIN_TABLES_PATH;
     process.env.SNOOZEFINE_ADMIN_TABLES_JSON = JSON.stringify(tableMapping);
 
     const loaded = await loadPlatformOutputs();
