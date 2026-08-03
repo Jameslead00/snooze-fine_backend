@@ -590,9 +590,9 @@ const schema = a.schema({
     serverTimestamp: a.datetime().required(),
   }),
   WeeklyRecapHabitResult: a.customType({
-    kind: a.enum(['WATER', 'READING', 'MEDITATION', 'BED']),
+    kind: a.string().required(),
     title: a.string().required(),
-    unit: a.enum(['MILLILITRES', 'MINUTES', 'COUNT', 'CHECKMARK']),
+    unit: a.string().required(),
     scheduledDays: a.integer().required(),
     completedDays: a.integer().required(),
     progressValue: a.integer().required(),
@@ -600,7 +600,7 @@ const schema = a.schema({
     progressPercentage: a.float().required(),
   }),
   WeeklyProgressRecapResult: a.customType({
-    period: a.enum(['WEEK']),
+    period: a.string().required(),
     periodStart: a.date().required(),
     periodEnd: a.date().required(),
     includedDays: a.integer().required(),
