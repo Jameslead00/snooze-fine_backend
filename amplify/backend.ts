@@ -159,6 +159,7 @@ functions.account.resources.lambda.addToRolePolicy(
       `${platformTables.syncedAlarm.tableArn}/index/byUserEnvironmentAndUpdatedAt`,
       `${platformTables.wakeCompletion.tableArn}/index/byUserEnvironmentAndCompletedAt`,
       `${platformTables.communityBallot.tableArn}/index/byEnvironmentStatusAndClosesAt`,
+      `${platformTables.period.tableArn}/index/byEnvironmentAndPeriodEnd`,
     ],
   }),
 );
