@@ -13,6 +13,7 @@ import {
   reportHabitProgress,
   saveHabit,
 } from '../../shared/habits.js';
+import { defaultHabitStepValue } from '../../shared/habit-types.js';
 import type { HabitRepository } from '../../shared/habit-repository.js';
 import {
   habitIdArgumentsSchema,
@@ -57,7 +58,15 @@ export async function handleHabitApiEvent(
       return (await habitDashboard(repository, userId, now)).map(publicHabit);
     case 'saveMyHabit': {
       const input = saveHabitArgumentsSchema.parse(event.arguments.input);
-      const saved = await saveHabit(repository, { userId, ...input }, now);
+      const saved = await saveHabit(
+        repository,
+        {
+          userId,
+          ...input,
+          stepValue: input.stepValue ?? defaultHabitStepValue(input.kind),
+        },
+        now,
+      );
       const view = await habitView(repository, saved, now);
       return publicHabit(view);
     }

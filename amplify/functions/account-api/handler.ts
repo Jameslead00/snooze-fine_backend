@@ -15,7 +15,12 @@ import {
   tableNamesFromEnvironment,
 } from '../../shared/dynamo-repository.js';
 import { DomainError } from '../../shared/domain.js';
+import {
+  DynamoHabitRepository,
+  habitTableNamesFromEnvironment,
+} from '../../shared/dynamo-habit-repository.js';
 import type { EngagementRepository } from '../../shared/engagement-repository.js';
+import { weeklyProgressRecap, type WeeklyProgressRecap } from '../../shared/recaps.js';
 import {
   DynamoSyncRepository,
   syncTableNamesFromEnvironment,
@@ -53,7 +58,9 @@ export type AccountApiRepository = Pick<
 > &
   SyncRepository &
   CommunityRepository &
-  EngagementRepository;
+  EngagementRepository & {
+    weeklyProgressRecap: (userId: string, now: string) => Promise<WeeklyProgressRecap>;
+  };
 
 export async function handleAccountApiEvent(
   event: AccountApiEvent,
@@ -118,6 +125,9 @@ export async function handleAccountApiEvent(
   if (event.fieldName === 'getMyAccountabilityStatistics') {
     return repository.statistics(userId, now);
   }
+  if (event.fieldName === 'getMyWeeklyProgressRecap') {
+    return repository.weeklyProgressRecap(userId, now);
+  }
   if (event.fieldName === 'getCommunityDashboard') {
     const [dashboard, account, projection] = await Promise.all([
       repository.dashboard(userId, now),
@@ -157,6 +167,10 @@ export const handler = async (event: AccountApiEvent): Promise<unknown> => {
     configuredEnvironment(),
   );
   const sync = new DynamoSyncRepository(syncTableNamesFromEnvironment(), configuredEnvironment());
+  const habits = new DynamoHabitRepository(
+    habitTableNamesFromEnvironment(),
+    configuredEnvironment(),
+  );
   const community = new DynamoCommunityRepository(
     communityTableNamesFromEnvironment(),
     configuredEnvironment(),
@@ -176,6 +190,17 @@ export const handler = async (event: AccountApiEvent): Promise<unknown> => {
       sync.archiveAlarm(userId, alarmId, expectedVersion, now),
     recordWake: (command, now) => sync.recordWake(command, now),
     statistics: (userId, now) => sync.statistics(userId, now),
+    weeklyProgressRecap: (userId, now) =>
+      weeklyProgressRecap(
+        {
+          listHabits: (recapUserId) => habits.listHabits(recapUserId),
+          listOccurrences: (recapUserId, localDate) =>
+            habits.listOccurrences(recapUserId, localDate),
+          statistics: (recapUserId, recapNow) => sync.statistics(recapUserId, recapNow),
+        },
+        userId,
+        now,
+      ),
     dashboard: (userId, now) => community.dashboard(userId, now),
     castVote: (userId, charityId, now) => community.castVote(userId, charityId, now),
     recordEngagement: (command, now) => engagement.recordEngagement(command, now),

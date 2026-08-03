@@ -25,7 +25,7 @@ describe('habit API', () => {
             kind: 'WATER',
             title: 'Drink water',
             targetValue: 2_000,
-            stepValue: 250,
+            stepValue: 33,
             unit: 'MILLILITRES',
             weekdays: [1, 2, 3, 4, 5, 6, 7],
             deadlineMinutes: 1_320,
@@ -36,11 +36,19 @@ describe('habit API', () => {
       },
       repository,
       now,
-    )) as { id: string; title: string; scheduledToday: boolean };
+    )) as {
+      id: string;
+      title: string;
+      targetValue: number;
+      stepValue: number;
+      scheduledToday: boolean;
+    };
 
     expect(result).toMatchObject({
       id: habitId,
       title: 'Drink water',
+      targetValue: 2_000,
+      stepValue: 33,
       scheduledToday: true,
     });
   });

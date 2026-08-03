@@ -486,7 +486,7 @@ const schema = a.schema({
     kind: a.enum(['WATER', 'READING', 'MEDITATION', 'BED']),
     title: a.string().required(),
     targetValue: a.integer().required(),
-    stepValue: a.integer().required(),
+    stepValue: a.integer(),
     unit: a.enum(['MILLILITRES', 'MINUTES', 'COUNT', 'CHECKMARK']),
     weekdays: a.integer().array().required(),
     deadlineMinutes: a.integer().required(),
@@ -587,6 +587,30 @@ const schema = a.schema({
     currentPeriodDeducted: a.integer().required(),
     lifetimeDeducted: a.integer().required(),
     timezone: a.string().required(),
+    serverTimestamp: a.datetime().required(),
+  }),
+  WeeklyRecapHabitResult: a.customType({
+    kind: a.enum(['WATER', 'READING', 'MEDITATION', 'BED']),
+    title: a.string().required(),
+    unit: a.enum(['MILLILITRES', 'MINUTES', 'COUNT', 'CHECKMARK']),
+    scheduledDays: a.integer().required(),
+    completedDays: a.integer().required(),
+    progressValue: a.integer().required(),
+    targetValue: a.integer().required(),
+    progressPercentage: a.float().required(),
+  }),
+  WeeklyProgressRecapResult: a.customType({
+    period: a.enum(['WEEK']),
+    periodStart: a.date().required(),
+    periodEnd: a.date().required(),
+    includedDays: a.integer().required(),
+    timezone: a.string().required(),
+    habits: a.ref('WeeklyRecapHabitResult').array().required(),
+    promisesScheduled: a.integer().required(),
+    promisesKept: a.integer().required(),
+    promisesPercentage: a.float().required(),
+    wakeUps: a.integer().required(),
+    noSnoozeMornings: a.integer().required(),
     serverTimestamp: a.datetime().required(),
   }),
   CommunityCharityResult: a.customType({
@@ -737,6 +761,12 @@ const schema = a.schema({
   getMyAccountabilityStatistics: a
     .query()
     .returns(a.ref('AccountabilityStatisticsResult'))
+    .authorization((allow) => [allow.authenticated()])
+    .handler(a.handler.function(accountApiFunction)),
+
+  getMyWeeklyProgressRecap: a
+    .query()
+    .returns(a.ref('WeeklyProgressRecapResult'))
     .authorization((allow) => [allow.authenticated()])
     .handler(a.handler.function(accountApiFunction)),
 

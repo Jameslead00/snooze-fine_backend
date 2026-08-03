@@ -150,7 +150,7 @@ export const saveHabitArgumentsSchema = z.object({
   kind: habitKindSchema,
   title: z.string().trim().min(1).max(80),
   targetValue: z.number().int().min(1).max(100_000),
-  stepValue: z.number().int().min(1).max(100_000),
+  stepValue: z.number().int().min(1).max(100_000).optional(),
   unit: habitUnitSchema,
   weekdays: z.array(z.number().int().min(1).max(7)).min(1).max(7),
   deadlineMinutes: z.number().int().min(0).max(1_439),

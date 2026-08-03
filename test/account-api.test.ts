@@ -103,6 +103,20 @@ function repository(): AccountApiRepository {
       timezone: 'Europe/Zurich',
       serverTimestamp: now,
     }),
+    weeklyProgressRecap: vi.fn().mockResolvedValue({
+      period: 'WEEK',
+      periodStart: '2026-07-27',
+      periodEnd: '2026-07-31',
+      includedDays: 5,
+      timezone: 'Europe/Zurich',
+      habits: [],
+      promisesScheduled: 0,
+      promisesKept: 0,
+      promisesPercentage: 0,
+      wakeUps: 0,
+      noSnoozeMornings: 0,
+      serverTimestamp: now,
+    }),
     dashboard: vi.fn().mockResolvedValue({
       status: 'NOT_PUBLISHED',
       charities: [],
@@ -211,6 +225,23 @@ describe('account API Amplify function event dispatch', () => {
       now,
     );
     expect(result).toMatchObject({ accepted: true, duplicate: false, snoozeCount: 0 });
+  });
+
+  it('loads the server-owned weekly progress recap', async () => {
+    const accountRepository = repository();
+
+    const result = await handleAccountApiEvent(
+      event('getMyWeeklyProgressRecap'),
+      accountRepository,
+      now,
+    );
+
+    expect(accountRepository.weeklyProgressRecap).toHaveBeenCalledWith(userId, now);
+    expect(result).toMatchObject({
+      period: 'WEEK',
+      periodStart: '2026-07-27',
+      promisesPercentage: 0,
+    });
   });
 
   it('checks backend eligibility before accepting a daily charity vote', async () => {

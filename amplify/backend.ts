@@ -115,7 +115,7 @@ const habitTableEnvironment: Array<[string, ITable]> = [
   ['HABIT_OCCURRENCE_TABLE_NAME', platformTables.habitOccurrence],
   ['HABIT_PROGRESS_EVENT_TABLE_NAME', platformTables.habitProgressEvent],
 ];
-for (const target of [functions.habit, functions.habitEnforcer]) {
+for (const target of [functions.habit, functions.habitEnforcer, functions.account]) {
   for (const [variableName, table] of habitTableEnvironment) {
     addTableEnvironment(target, variableName, table.tableName);
   }
@@ -150,6 +150,8 @@ platformTables.charity.grantReadData(functions.account.resources.lambda);
 platformTables.communityBallot.grantReadWriteData(functions.account.resources.lambda);
 platformTables.dailyCharityVote.grantReadWriteData(functions.account.resources.lambda);
 platformTables.donationRecord.grantReadData(functions.account.resources.lambda);
+platformTables.habit.grantReadData(functions.account.resources.lambda);
+platformTables.habitOccurrence.grantReadData(functions.account.resources.lambda);
 functions.account.resources.lambda.addToRolePolicy(
   new PolicyStatement({
     actions: ['dynamodb:Query'],
@@ -160,6 +162,8 @@ functions.account.resources.lambda.addToRolePolicy(
       `${platformTables.wakeCompletion.tableArn}/index/byUserEnvironmentAndCompletedAt`,
       `${platformTables.communityBallot.tableArn}/index/byEnvironmentStatusAndClosesAt`,
       `${platformTables.period.tableArn}/index/byEnvironmentAndPeriodEnd`,
+      `${platformTables.habit.tableArn}/index/byUserEnvironmentAndUpdatedAt`,
+      `${platformTables.habitOccurrence.tableArn}/index/byUserEnvironmentDateAndHabitId`,
     ],
   }),
 );
