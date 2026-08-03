@@ -5,6 +5,10 @@ import type { PlatformTableNames } from '../amplify/shared/dynamo-repository.js'
 
 export interface AdminTableNames extends PlatformTableNames {
   engagement: string;
+  charity?: string | undefined;
+  ballot?: string | undefined;
+  vote?: string | undefined;
+  donation?: string | undefined;
 }
 
 const outputsSchema = z.object({
@@ -76,6 +80,7 @@ export async function loadPlatformOutputs(): Promise<{
     if (value === undefined) throw new Error(`Backend output is missing ${key}`);
     return value;
   };
+  const optional = (key: string): string | undefined => table[key];
   return {
     tables: {
       userProfile: required('USER_PROFILE_TABLE_NAME'),
@@ -88,6 +93,18 @@ export async function loadPlatformOutputs(): Promise<{
       snooze: required('SNOOZE_EVENT_TABLE_NAME'),
       settlement: required('MONTHLY_SETTLEMENT_TABLE_NAME'),
       engagement: required('ENGAGEMENT_EVENT_TABLE_NAME'),
+      ...(optional('CHARITY_TABLE_NAME') === undefined
+        ? {}
+        : { charity: optional('CHARITY_TABLE_NAME') }),
+      ...(optional('COMMUNITY_BALLOT_TABLE_NAME') === undefined
+        ? {}
+        : { ballot: optional('COMMUNITY_BALLOT_TABLE_NAME') }),
+      ...(optional('DAILY_CHARITY_VOTE_TABLE_NAME') === undefined
+        ? {}
+        : { vote: optional('DAILY_CHARITY_VOTE_TABLE_NAME') }),
+      ...(optional('DONATION_RECORD_TABLE_NAME') === undefined
+        ? {}
+        : { donation: optional('DONATION_RECORD_TABLE_NAME') }),
     },
     webhookUrl: parsed.custom.snoozefine.revenuecat_webhook_url,
   };

@@ -13,6 +13,7 @@
     "admin:settlement": "tsx scripts/admin.ts settlement",
     "admin:summary": "tsx scripts/admin.ts summary",
     "admin:unresolved-webhooks": "tsx scripts/admin.ts unresolved-webhooks",
+    "seed:community": "tsx scripts/seed-community-fixture.ts",
     "deploy": "ampx pipeline-deploy",
     "deploy:staging": "ampx pipeline-deploy --branch staging --app-id \"$AMPLIFY_APP_ID\"",
     "format": "prettier --write .",

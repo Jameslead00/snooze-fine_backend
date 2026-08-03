@@ -109,3 +109,24 @@ Use a fresh Cognito test user, not the seeded account:
 
 Only after this checklist passes should a separate production branch and production secret set be
 created.
+
+## Optional Community fixture
+
+To exercise the Community tab before several real Apple sandbox subscribers exist, use the
+backend-only admin mapping and an AWS profile with staging DynamoDB write access:
+
+```bash
+export AWS_REGION=eu-north-1
+export SNOOZEFINE_ADMIN_TABLES_PATH=./admin_tables.local.json
+npm run seed:community -- \
+  --staging \
+  --environment SANDBOX \
+  --members 12 \
+  --vote-days 3 \
+  --timezone Europe/Zurich
+```
+
+This creates synthetic DynamoDB member records only; it does not create Cognito users or Apple
+transactions. The fixture is marked by stable `staging-fixture-*` IDs, is safe to rerun, keeps the
+ballot open for the current month, and reports the aggregate remaining points and expected
+donation. It is test data only: no donation is paid.

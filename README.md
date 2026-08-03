@@ -165,6 +165,27 @@ npm run seed -- --user-id <cognito-sub> --timezone Europe/Zurich
 It creates an idempotent linked RevenueCat sandbox identity, active period, 2,000-point allocation,
 two 25-point snoozes, and a calculated test settlement.
 
+For a staging Community walkthrough, use the staging-only fixture after deployment. It creates
+three owner-reviewed test charities, an open current-month ballot, deterministic synthetic members
+with active 2,000-point periods, and recent daily vote rows. The synthetic members are DynamoDB
+fixture records, not Cognito accounts; the signed-in staging user can still vote normally.
+
+```bash
+export AWS_REGION=eu-north-1
+export SNOOZEFINE_ADMIN_TABLES_PATH=./admin_tables.local.json
+npm run seed:community -- \
+  --staging \
+  --environment SANDBOX \
+  --members 12 \
+  --vote-days 3 \
+  --timezone Europe/Zurich
+```
+
+The command is idempotent and recalculates ballot tallies from the stored vote rows. It prints the
+synthetic remaining-point total and expected donation projection. It requires an AWS profile with
+write access to the staging DynamoDB tables; it never targets `PRODUCTION` and never transfers
+money.
+
 ## Sign in with Apple readiness
 
 Email/password is deployed now. Apple federation is deliberately not enabled with fake values:
