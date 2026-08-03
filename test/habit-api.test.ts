@@ -43,4 +43,57 @@ describe('habit API', () => {
       scheduledToday: true,
     });
   });
+
+  it('accepts the fixed BED habit kind through the GraphQL input contract', async () => {
+    const repository = new InMemoryHabitRepository();
+    const result = (await handleHabitApiEvent(
+      {
+        fieldName: 'saveMyHabit',
+        arguments: {
+          input: {
+            habitId,
+            kind: 'BED',
+            title: 'Making the bed',
+            targetValue: 1,
+            unit: 'CHECKMARK',
+            weekdays: [1, 2, 3, 4, 5, 6, 7],
+            deadlineMinutes: 1_439,
+            timezone: 'Europe/Zurich',
+          },
+        },
+        identity: { claims: { sub: userId } } as unknown as AppSyncIdentity,
+      },
+      repository,
+      now,
+    )) as { kind: string; title: string };
+
+    expect(result).toMatchObject({ kind: 'BED', title: 'Making the bed' });
+  });
+
+  it('rejects CUSTOM as a new habit kind', async () => {
+    const repository = new InMemoryHabitRepository();
+
+    await expect(
+      handleHabitApiEvent(
+        {
+          fieldName: 'saveMyHabit',
+          arguments: {
+            input: {
+              habitId,
+              kind: 'CUSTOM',
+              title: 'Journal',
+              targetValue: 1,
+              unit: 'CHECKMARK',
+              weekdays: [1, 2, 3, 4, 5, 6, 7],
+              deadlineMinutes: 1_439,
+              timezone: 'Europe/Zurich',
+            },
+          },
+          identity: { claims: { sub: userId } } as unknown as AppSyncIdentity,
+        },
+        repository,
+        now,
+      ),
+    ).rejects.toThrow();
+  });
 });

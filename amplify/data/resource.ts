@@ -240,7 +240,9 @@ const schema = a.schema({
       environment: a.enum(['SANDBOX', 'PRODUCTION']),
       userEnvironment: a.string().required(),
       environmentState: a.string().required(),
-      kind: a.enum(['WATER', 'READING', 'MEDITATION', 'CUSTOM']),
+      // CUSTOM remains readable for legacy records, but all new fixed habits
+      // use their own explicit enum value, including BED.
+      kind: a.enum(['WATER', 'READING', 'MEDITATION', 'BED', 'CUSTOM']),
       title: a.string().required(),
       targetValue: a.integer().required(),
       unit: a.enum(['MILLILITRES', 'MINUTES', 'COUNT', 'CHECKMARK']),
@@ -478,7 +480,7 @@ const schema = a.schema({
   }),
   SaveHabitInput: a.customType({
     habitId: a.id().required(),
-    kind: a.enum(['WATER', 'READING', 'MEDITATION', 'CUSTOM']),
+    kind: a.enum(['WATER', 'READING', 'MEDITATION', 'BED']),
     title: a.string().required(),
     targetValue: a.integer().required(),
     unit: a.enum(['MILLILITRES', 'MINUTES', 'COUNT', 'CHECKMARK']),

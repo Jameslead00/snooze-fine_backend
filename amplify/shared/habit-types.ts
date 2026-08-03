@@ -1,6 +1,7 @@
 import type { RevenueCatEnvironment } from './config.js';
 
-export type HabitKind = 'WATER' | 'READING' | 'MEDITATION' | 'CUSTOM';
+export type HabitKind = 'WATER' | 'READING' | 'MEDITATION' | 'BED' | 'CUSTOM';
+export type SavableHabitKind = Exclude<HabitKind, 'CUSTOM'>;
 export type HabitUnit = 'MILLILITRES' | 'MINUTES' | 'COUNT' | 'CHECKMARK';
 export type HabitOccurrenceStatus = 'PENDING' | 'COMPLETED' | 'MISSED' | 'SKIPPED_INELIGIBLE';
 
@@ -10,7 +11,7 @@ export interface HabitDefinition {
   environment: RevenueCatEnvironment;
   userEnvironment: string;
   environmentState: string;
-  kind: HabitKind;
+  kind: SavableHabitKind;
   title: string;
   targetValue: number;
   unit: HabitUnit;
