@@ -11,6 +11,7 @@ import type {
   SubscriptionState,
   WebhookRecord,
 } from './types.js';
+import type { CommunityDonationProjection } from './community-types.js';
 
 export interface AllocationWrite {
   period: PointPeriod;
@@ -42,6 +43,7 @@ export interface PlatformRepository {
     now: string;
   }): Promise<{ linked: boolean; duplicate: boolean }>;
   getPointAccountView(userId: string, now: string): Promise<PointAccountView>;
+  getCommunityDonationProjection(now: string): Promise<CommunityDonationProjection>;
   listPointTransactions(
     userId: string,
     limit: number,

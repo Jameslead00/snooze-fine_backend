@@ -591,6 +591,7 @@ const schema = a.schema({
     websiteUrl: a.url(),
     impactLabel: a.string(),
     votes: a.integer().required(),
+    votePercentage: a.float().required(),
   }),
   CommunityDashboardResult: a.customType({
     ballotId: a.id(),
@@ -604,6 +605,7 @@ const schema = a.schema({
     canVoteToday: a.boolean().required(),
     winnerCharityId: a.id(),
     donationStatus: a.string(),
+    projectedDonationMicroUsd: a.string(),
     expectedDonationMicroUsd: a.string(),
     paidDonationMicroUsd: a.string(),
     evidenceUrl: a.url(),

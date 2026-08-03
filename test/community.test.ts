@@ -103,6 +103,29 @@ function repository(client: FakeDocumentClient): DynamoCommunityRepository {
 }
 
 describe('community voting accountability', () => {
+  it('returns zero-safe percentage shares from the authoritative tally', async () => {
+    const client = new FakeDocumentClient();
+    const emptyDashboard = await repository(client).dashboard(
+      'cognito-user',
+      '2026-07-31T20:00:00.000Z',
+    );
+    expect(emptyDashboard.charities.map((charity) => charity.votePercentage)).toEqual([0, 0]);
+
+    client.ballot.tallies['charity-a'] = 3;
+    client.ballot.tallies['charity-b'] = 1;
+    client.ballot.totalVotes = 4;
+
+    const dashboard = await repository(client).dashboard(
+      'cognito-user',
+      '2026-07-31T20:00:00.000Z',
+    );
+
+    expect(dashboard.charities.map(({ id, votePercentage }) => ({ id, votePercentage }))).toEqual([
+      { id: 'charity-a', votePercentage: 75 },
+      { id: 'charity-b', votePercentage: 25 },
+    ]);
+  });
+
   it('allows one vote per user-local day and safely deduplicates retries', async () => {
     const client = new FakeDocumentClient();
     const subject = repository(client);

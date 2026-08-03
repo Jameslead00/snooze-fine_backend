@@ -49,7 +49,7 @@ export type AccountApiEvent = {
 
 export type AccountApiRepository = Pick<
   PlatformRepository,
-  'getPointAccountView' | 'listPointTransactions'
+  'getPointAccountView' | 'getCommunityDonationProjection' | 'listPointTransactions'
 > &
   SyncRepository &
   CommunityRepository &
@@ -119,7 +119,16 @@ export async function handleAccountApiEvent(
     return repository.statistics(userId, now);
   }
   if (event.fieldName === 'getCommunityDashboard') {
-    return repository.dashboard(userId, now);
+    const [dashboard, account, projection] = await Promise.all([
+      repository.dashboard(userId, now),
+      repository.getPointAccountView(userId, now),
+      repository.getCommunityDonationProjection(now),
+    ]);
+    return {
+      ...dashboard,
+      canVoteToday: dashboard.canVoteToday && account.isEligible,
+      projectedDonationMicroUsd: String(projection.expectedDonationMicroUsd),
+    };
   }
   if (event.fieldName === 'castMyDailyCharityVote') {
     const input = charityVoteArgumentsSchema.parse(event.arguments);
@@ -158,6 +167,7 @@ export const handler = async (event: AccountApiEvent): Promise<unknown> => {
   );
   const repository: AccountApiRepository = {
     getPointAccountView: (userId, now) => platform.getPointAccountView(userId, now),
+    getCommunityDonationProjection: (now) => platform.getCommunityDonationProjection(now),
     listPointTransactions: (userId, limit, nextToken) =>
       platform.listPointTransactions(userId, limit, nextToken),
     listAlarms: (userId) => sync.listAlarms(userId),

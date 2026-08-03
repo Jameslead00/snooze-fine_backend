@@ -74,6 +74,9 @@ const asBallot = (item: Record<string, unknown>): BallotItem => ({
   donationRecordId: typeof item.donationRecordId === 'string' ? item.donationRecordId : undefined,
 });
 
+const percentageFor = (votes: number, totalVotes: number): number =>
+  totalVotes > 0 ? (votes / totalVotes) * 100 : 0;
+
 export class DynamoCommunityRepository implements CommunityRepository {
   private readonly client: DynamoDBDocumentClient;
 
@@ -115,6 +118,7 @@ export class DynamoCommunityRepository implements CommunityRepository {
         websiteUrl: typeof item.websiteUrl === 'string' ? item.websiteUrl : undefined,
         impactLabel: typeof item.impactLabel === 'string' ? item.impactLabel : undefined,
         votes: ballot.tallies[charityId] ?? 0,
+        votePercentage: percentageFor(ballot.tallies[charityId] ?? 0, ballot.totalVotes),
       });
     }
     const donation =

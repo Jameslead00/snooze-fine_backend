@@ -11,7 +11,7 @@ export interface HabitDefinition {
   environment: RevenueCatEnvironment;
   userEnvironment: string;
   environmentState: string;
-  kind: SavableHabitKind;
+  kind: HabitKind;
   title: string;
   targetValue: number;
   unit: HabitUnit;
@@ -51,7 +51,7 @@ export interface HabitOccurrence {
 export interface SaveHabitCommand {
   userId: string;
   habitId: string;
-  kind: HabitKind;
+  kind: SavableHabitKind;
   title: string;
   targetValue: number;
   unit: HabitUnit;

@@ -1,6 +1,7 @@
 import { PLATFORM_CONFIG } from '../../amplify/shared/config.js';
 import { DomainError } from '../../amplify/shared/domain.js';
 import { expectedDonationMicroUsd } from '../../amplify/shared/money.js';
+import type { CommunityDonationProjection } from '../../amplify/shared/community-types.js';
 import type {
   ApplyRevenueCatInput,
   PlatformRepository,
@@ -237,6 +238,22 @@ export class InMemoryRepository implements PlatformRepository {
       subscriptionStatus: subscription?.status ?? 'UNKNOWN',
       donationMicroUsd: expectedDonationMicroUsd(balance, PLATFORM_CONFIG.microUsdPerPoint),
       serverTimestamp: now,
+    };
+  }
+
+  public async getCommunityDonationProjection(now: string): Promise<CommunityDonationProjection> {
+    const views = await Promise.all(
+      [...this.accounts.values()].map((account) => this.getPointAccountView(account.userId, now)),
+    );
+    const eligibleViews = views.filter((view) => view.isEligible);
+    const remainingPoints = eligibleViews.reduce((total, view) => total + view.officialBalance, 0);
+    return {
+      eligibleMemberCount: eligibleViews.length,
+      remainingPoints,
+      expectedDonationMicroUsd: expectedDonationMicroUsd(
+        remainingPoints,
+        PLATFORM_CONFIG.microUsdPerPoint,
+      ),
     };
   }
 

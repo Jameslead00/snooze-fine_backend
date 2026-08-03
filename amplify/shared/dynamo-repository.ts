@@ -13,6 +13,7 @@ import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { PLATFORM_CONFIG, type RevenueCatEnvironment } from './config.js';
 import { DomainError } from './domain.js';
 import { expectedDonationMicroUsd } from './money.js';
+import type { CommunityDonationProjection } from './community-types.js';
 import type { ApplyRevenueCatInput, PlatformRepository, TransactionPage } from './repository.js';
 import { sha256 } from './security.js';
 import type {
@@ -707,6 +708,81 @@ export class DynamoPlatformRepository implements PlatformRepository {
       subscriptionStatus: subscription?.status ?? 'UNKNOWN',
       donationMicroUsd: expectedDonationMicroUsd(balance, PLATFORM_CONFIG.microUsdPerPoint),
       serverTimestamp: now,
+    };
+  }
+
+  public async getCommunityDonationProjection(now: string): Promise<CommunityDonationProjection> {
+    const periodItems: Record<string, unknown>[] = [];
+    let exclusiveStartKey: Record<string, unknown> | undefined;
+    do {
+      const response = await this.client.send(
+        new QueryCommand({
+          TableName: this.tables.period,
+          IndexName: 'byEnvironmentAndPeriodEnd',
+          KeyConditionExpression: 'environment = :environment AND periodEnd > :now',
+          ExpressionAttributeValues: { ':environment': this.environment, ':now': now },
+          ScanIndexForward: true,
+          ExclusiveStartKey: exclusiveStartKey,
+        }),
+      );
+      periodItems.push(...(response.Items ?? []));
+      exclusiveStartKey = response.LastEvaluatedKey;
+    } while (exclusiveStartKey !== undefined);
+
+    const periods = periodItems
+      .map(asPeriod)
+      .filter(
+        (period) =>
+          period.environment === this.environment &&
+          period.status === 'ACTIVE' &&
+          period.periodEnd > now,
+      );
+    const subscriptions = new Map<string, SubscriptionState>();
+    for (let offset = 0; offset < periods.length; offset += 100) {
+      const userIds = [
+        ...new Set(periods.slice(offset, offset + 100).map((period) => period.userId)),
+      ];
+      if (userIds.length === 0) continue;
+      const items = await this.batchGetItems(
+        this.tables.subscription,
+        userIds.map((userId) => ({ id: subscriptionId(userId, this.environment) })),
+      );
+      for (const item of items) {
+        const subscription = asSubscription(item);
+        subscriptions.set(subscription.userId, subscription);
+      }
+    }
+
+    const eligiblePeriods = new Map<string, PointPeriod>();
+    for (const period of periods) {
+      const subscription = subscriptions.get(period.userId);
+      if (
+        subscription === undefined ||
+        subscription.environment !== this.environment ||
+        !['ACTIVE', 'GRACE_PERIOD', 'BILLING_ISSUE', 'CANCELLED_PENDING_EXPIRY'].includes(
+          subscription.status,
+        ) ||
+        subscription.currentPeriodEnd <= now
+      ) {
+        continue;
+      }
+      const current = eligiblePeriods.get(period.userId);
+      if (current === undefined || period.periodStart > current.periodStart) {
+        eligiblePeriods.set(period.userId, period);
+      }
+    }
+
+    const remainingPoints = [...eligiblePeriods.values()].reduce(
+      (total, period) => total + Math.max(0, period.currentRemaining),
+      0,
+    );
+    return {
+      eligibleMemberCount: eligiblePeriods.size,
+      remainingPoints,
+      expectedDonationMicroUsd: expectedDonationMicroUsd(
+        remainingPoints,
+        PLATFORM_CONFIG.microUsdPerPoint,
+      ),
     };
   }
 

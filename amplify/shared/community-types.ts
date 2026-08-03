@@ -5,6 +5,13 @@ export interface CommunityCharity {
   websiteUrl?: string | undefined;
   impactLabel?: string | undefined;
   votes: number;
+  votePercentage: number;
+}
+
+export interface CommunityDonationProjection {
+  eligibleMemberCount: number;
+  remainingPoints: number;
+  expectedDonationMicroUsd: number;
 }
 
 export interface CommunityDashboard {
@@ -19,6 +26,7 @@ export interface CommunityDashboard {
   canVoteToday: boolean;
   winnerCharityId?: string | undefined;
   donationStatus?: string | undefined;
+  projectedDonationMicroUsd?: string | undefined;
   expectedDonationMicroUsd?: string | undefined;
   paidDonationMicroUsd?: string | undefined;
   evidenceUrl?: string | undefined;
