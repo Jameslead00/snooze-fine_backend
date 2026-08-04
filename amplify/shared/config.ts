@@ -9,6 +9,8 @@ export const PLATFORM_CONFIG = {
   microUsdPerPoint: 1_000,
   settlementMode: 'TEST',
   settlementCalculationVersion: 'v1',
+  wakeCompletionPointEarned: 25,
+  habitCompletionPointEarned: 10,
   webhookMaxPayloadBytes: 256 * 1024,
   snoozeFutureToleranceMs: 5 * 60 * 1_000,
   snoozeMaxAgeMs: 7 * 24 * 60 * 60 * 1_000,

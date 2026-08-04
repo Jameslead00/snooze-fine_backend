@@ -48,11 +48,19 @@ function repository(): AccountApiRepository {
       donationMicroUsd: 2_000_000,
       serverTimestamp: now,
     }),
-    getCommunityDonationProjection: vi.fn().mockResolvedValue({
-      eligibleMemberCount: 1,
-      remainingPoints: 2_000,
-      expectedDonationMicroUsd: 2_000_000,
+    getDisciPointAccount: vi.fn().mockResolvedValue({
+      currentPoints: 0,
+      lifetimeEarned: 0,
+      serverTimestamp: now,
     }),
+    earnPoints: vi.fn().mockResolvedValue({
+      duplicate: false,
+      pointsEarned: 25,
+      currentPoints: 25,
+      lifetimeEarned: 25,
+      serverTimestamp: now,
+    }),
+    listPointAwards: vi.fn().mockResolvedValue({ items: [], nextToken: undefined }),
     listPointTransactions: vi.fn().mockResolvedValue({
       items: [],
       nextToken: undefined,
@@ -124,12 +132,14 @@ function repository(): AccountApiRepository {
       canVoteToday: false,
       serverTimestamp: now,
     }),
-    castVote: vi.fn().mockResolvedValue({
+    allocatePoints: vi.fn().mockResolvedValue({
       accepted: true,
       duplicate: false,
       charityId: 'charity-1',
       localVoteDate: '2026-07-31',
       totalVotes: 1,
+      pointsAllocated: 25,
+      newlyAllocatedPoints: 25,
       serverTimestamp: now,
     }),
     recordEngagement: vi.fn().mockResolvedValue({
@@ -244,7 +254,7 @@ describe('account API Amplify function event dispatch', () => {
     });
   });
 
-  it('checks backend eligibility before accepting a daily charity vote', async () => {
+  it('allocates earned points without checking subscription eligibility', async () => {
     const accountRepository = repository();
     const result = await handleAccountApiEvent(
       event('castMyDailyCharityVote', { charityId: 'charity-1' }),
@@ -252,12 +262,11 @@ describe('account API Amplify function event dispatch', () => {
       now,
     );
 
-    expect(accountRepository.getPointAccountView).toHaveBeenCalledWith(userId, now);
-    expect(accountRepository.castVote).toHaveBeenCalledWith(userId, 'charity-1', now);
+    expect(accountRepository.allocatePoints).toHaveBeenCalledWith(userId, 'charity-1', now);
     expect(result).toMatchObject({ accepted: true, charityId: 'charity-1' });
   });
 
-  it('adds the live community projection and gates dashboard voting by eligibility', async () => {
+  it('returns the community dashboard without a point-to-money projection', async () => {
     const accountRepository = repository();
     vi.mocked(accountRepository.dashboard).mockResolvedValue({
       status: 'OPEN',
@@ -265,7 +274,10 @@ describe('account API Amplify function event dispatch', () => {
       month: '2026-07',
       charities: [],
       totalVotes: 4,
-      canVoteToday: true,
+      earnedVotes: 25,
+      allocatedVotes: 0,
+      availableVotes: 25,
+      canAllocateVotes: true,
       serverTimestamp: now,
     });
 
@@ -275,43 +287,12 @@ describe('account API Amplify function event dispatch', () => {
       now,
     );
 
-    expect(accountRepository.getCommunityDonationProjection).toHaveBeenCalledWith(now);
     expect(result).toMatchObject({
-      canVoteToday: true,
-      projectedDonationMicroUsd: '2000000',
+      canAllocateVotes: true,
+      availableVotes: 25,
     });
   });
 
-  it('does not expose a vote action to an ineligible dashboard user', async () => {
-    const accountRepository = repository();
-    vi.mocked(accountRepository.getPointAccountView).mockResolvedValue({
-      isEligible: false,
-      officialBalance: 0,
-      activePointPeriodId: undefined,
-      initialAllocation: 0,
-      pointsDeducted: 0,
-      periodStart: undefined,
-      periodEnd: undefined,
-      subscriptionStatus: 'EXPIRED',
-      donationMicroUsd: 0,
-      serverTimestamp: now,
-    });
-    vi.mocked(accountRepository.dashboard).mockResolvedValue({
-      status: 'OPEN',
-      charities: [],
-      totalVotes: 4,
-      canVoteToday: true,
-      serverTimestamp: now,
-    });
-
-    const result = await handleAccountApiEvent(
-      event('getCommunityDashboard'),
-      accountRepository,
-      now,
-    );
-
-    expect(result).toMatchObject({ canVoteToday: false });
-  });
 
   it('records allow-listed engagement using the Cognito sub', async () => {
     const accountRepository = repository();

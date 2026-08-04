@@ -6,6 +6,7 @@ export interface CommunityCharity {
   impactLabel?: string | undefined;
   votes: number;
   votePercentage: number;
+  myAllocatedVotes: number;
 }
 
 export interface CommunityDonationProjection {
@@ -22,13 +23,12 @@ export interface CommunityDashboard {
   closesAt?: string | undefined;
   charities: CommunityCharity[];
   totalVotes: number;
-  myVoteCharityId?: string | undefined;
-  canVoteToday: boolean;
+  earnedVotes: number;
+  allocatedVotes: number;
+  availableVotes: number;
+  canAllocateVotes: boolean;
+  contributionStatus?: string | undefined;
   winnerCharityId?: string | undefined;
-  donationStatus?: string | undefined;
-  projectedDonationMicroUsd?: string | undefined;
-  expectedDonationMicroUsd?: string | undefined;
-  paidDonationMicroUsd?: string | undefined;
   evidenceUrl?: string | undefined;
   serverTimestamp: string;
 }
@@ -36,8 +36,11 @@ export interface CommunityDashboard {
 export interface CommunityVoteResult {
   accepted: boolean;
   duplicate: boolean;
+  ballotId: string;
   charityId: string;
-  localVoteDate: string;
+  charityAllocatedVotes: number;
+  allocatedVotes: number;
+  availableVotes: number;
   totalVotes: number;
   serverTimestamp: string;
 }

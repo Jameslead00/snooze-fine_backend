@@ -125,43 +125,20 @@ export class InMemoryHabitRepository implements HabitRepository {
         officialBalance: current.officialBalance,
       };
     }
-    const balance = this.balances.get(input.habit.userId) ?? 0;
-    if (!this.eligible) {
-      const skipped: HabitOccurrence = {
-        ...(current ?? input.occurrence),
-        status: 'SKIPPED_INELIGIBLE',
-        officialBalance: balance,
-        missedAt: input.now,
-        version: (current?.version ?? 0) + 1,
-        updatedAt: input.now,
-      };
-      this.occurrences.set(skipped.id, skipped);
-      return {
-        duplicate: false,
-        status: skipped.status,
-        pointsDeducted: 0,
-        officialBalance: balance,
-      };
-    }
-    const pointsDeducted = Math.min(input.habit.penaltyPoints, balance);
-    const officialBalance = balance - pointsDeducted;
     const missed: HabitOccurrence = {
       ...(current ?? input.occurrence),
       status: 'MISSED',
-      pointsDeducted,
-      officialBalance,
+      pointsDeducted: 0,
       missedAt: input.now,
       version: (current?.version ?? 0) + 1,
       updatedAt: input.now,
     };
     this.occurrences.set(missed.id, missed);
-    this.balances.set(input.habit.userId, officialBalance);
-    this.deductions.push({ occurrenceId: missed.id, amount: pointsDeducted });
     return {
       duplicate: false,
       status: missed.status,
-      pointsDeducted,
-      officialBalance,
+      pointsDeducted: 0,
+      officialBalance: missed.officialBalance,
     };
   }
 

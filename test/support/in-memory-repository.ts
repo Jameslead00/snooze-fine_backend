@@ -7,7 +7,6 @@ import type {
   PlatformRepository,
   TransactionPage,
 } from '../../amplify/shared/repository.js';
-import { sha256 } from '../../amplify/shared/security.js';
 import type {
   PointAccount,
   PointAccountView,
@@ -108,73 +107,14 @@ export class InMemoryRepository implements PlatformRepository {
     const key = `snooze:${command.userId}:${command.snoozeEventId}`;
     const existing = this.snoozes.get(key);
     if (existing !== undefined) return { ...existing.result, duplicate: true };
-    const subscription = this.subscriptions.get(command.userId);
-    const account = this.accounts.get(command.userId);
-    if (
-      subscription === undefined ||
-      account === undefined ||
-      account.activePeriodId === undefined ||
-      !['ACTIVE', 'GRACE_PERIOD', 'BILLING_ISSUE', 'CANCELLED_PENDING_EXPIRY'].includes(
-        subscription.status,
-      ) ||
-      subscription.currentPeriodEnd <= now
-    ) {
-      throw new DomainError('INELIGIBLE_SUBSCRIPTION');
-    }
-    const period = this.periods.get(account.activePeriodId);
-    if (
-      period === undefined ||
-      period.userId !== command.userId ||
-      period.environment !== account.environment ||
-      period.status !== 'ACTIVE' ||
-      period.periodEnd <= now
-    ) {
-      throw new DomainError('NO_ACTIVE_POINT_PERIOD');
-    }
-    const deducted = Math.min(PLATFORM_CONFIG.snoozePointDeduction, account.currentBalance);
-    const balance = account.currentBalance - deducted;
-    const transactionId = sha256(`transaction:${key}`);
     const result: SnoozeResult = {
       accepted: true,
       duplicate: false,
-      pointsDeducted: deducted,
-      officialBalance: balance,
-      activePointPeriodId: period.id,
+      pointsDeducted: 0,
+      officialBalance: 0,
+      activePointPeriodId: 'earned-points',
       serverTimestamp: now,
     };
-    this.accounts.set(command.userId, {
-      ...account,
-      currentBalance: balance,
-      lifetimeDeducted: account.lifetimeDeducted + deducted,
-      version: account.version + 1,
-      updatedAt: now,
-    });
-    this.periods.set(period.id, {
-      ...period,
-      currentRemaining: balance,
-      updatedAt: now,
-    });
-    this.transactions.set(transactionId, {
-      id: transactionId,
-      userId: command.userId,
-      environment: period.environment,
-      userEnvironment: `${command.userId}:${period.environment}`,
-      pointPeriodId: period.id,
-      amount: -deducted,
-      transactionType: 'SNOOZE_DEDUCTION',
-      reasonCode: 'DISCIPOINT_SNOOZE',
-      source: 'IOS_APP',
-      idempotencyKey: key,
-      sourceEventId: command.snoozeEventId,
-      relatedEventId: command.alarmOccurrenceId,
-      balanceAfter: balance,
-      createdAt: now,
-      metadataJson: JSON.stringify({
-        alarmId: command.alarmId,
-        clientAppVersion: command.clientAppVersion,
-        legacyPurchaseReference: command.legacyPurchaseReference,
-      }),
-    });
     this.snoozes.set(key, { userId: command.userId, result });
     return result;
   }

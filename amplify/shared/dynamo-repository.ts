@@ -5,7 +5,6 @@ import {
   PutCommand,
   QueryCommand,
   ScanCommand,
-  TransactGetCommand,
   TransactWriteCommand,
   type TransactWriteCommandInput,
 } from '@aws-sdk/lib-dynamodb';
@@ -420,174 +419,64 @@ export class DynamoPlatformRepository implements PlatformRepository {
   public async recordSnooze(command: SnoozeCommand, now: string): Promise<SnoozeResult> {
     const idempotencyKey = `snooze:${command.userId}:${command.snoozeEventId}`;
     const snoozeId = sha256(idempotencyKey);
-    for (let attempt = 0; attempt < 4; attempt += 1) {
-      const existing = await this.getItem(this.tables.snooze, snoozeId);
-      if (existing !== undefined) {
-        if (String(existing.userId) !== command.userId) {
-          throw new DomainError('SNOOZE_ID_CONFLICT');
-        }
-        return {
-          accepted: existing.status === 'ACCEPTED',
-          duplicate: true,
-          pointsDeducted: Number(existing.pointsDeducted),
-          officialBalance: Number(existing.officialBalance),
-          activePointPeriodId: String(existing.activePointPeriodId),
-          serverTimestamp: String(existing.receivedAt),
-        };
+    // Snoozes remain observable for accountability statistics, but they never
+    // mutate a point balance. The legacy deduction code below is intentionally
+    // unreachable while historical records are retained for audit migration.
+    const existingNeutralSnooze = await this.getItem(this.tables.snooze, snoozeId);
+    if (existingNeutralSnooze !== undefined) {
+      if (String(existingNeutralSnooze.userId) !== command.userId) {
+        throw new DomainError('SNOOZE_ID_CONFLICT');
       }
-
-      const accountKey = accountId(command.userId, this.environment);
-      const stateKey = subscriptionId(command.userId, this.environment);
-      const state = await this.client.send(
-        new TransactGetCommand({
+      return {
+        accepted: existingNeutralSnooze.status === 'ACCEPTED',
+        duplicate: true,
+        pointsDeducted: 0,
+        officialBalance: 0,
+        activePointPeriodId: 'earned-points',
+        serverTimestamp: String(existingNeutralSnooze.receivedAt),
+      };
+    }
+    try {
+      await this.client.send(
+        new TransactWriteCommand({
           TransactItems: [
-            { Get: { TableName: this.tables.account, Key: { id: accountKey } } },
-            { Get: { TableName: this.tables.subscription, Key: { id: stateKey } } },
+            {
+              Put: {
+                TableName: this.tables.snooze,
+                Item: {
+                  id: snoozeId,
+                  userId: command.userId,
+                  environment: this.environment,
+                  alarmId: command.alarmId,
+                  alarmOccurrenceId: command.alarmOccurrenceId,
+                  occurredAt: command.occurredAt,
+                  receivedAt: now,
+                  status: 'ACCEPTED',
+                  pointsDeducted: 0,
+                  officialBalance: 0,
+                  clientAppVersion: command.clientAppVersion,
+                  legacyPurchaseReference: command.legacyPurchaseReference,
+                  createdAt: now,
+                  updatedAt: now,
+                },
+                ConditionExpression: 'attribute_not_exists(id)',
+              },
+            },
           ],
         }),
       );
-      const accountItem = state.Responses?.[0]?.Item;
-      const subscriptionItem = state.Responses?.[1]?.Item;
-      if (accountItem === undefined || subscriptionItem === undefined) {
-        throw new DomainError('INELIGIBLE_SUBSCRIPTION');
-      }
-      const account = asAccount(accountItem);
-      const subscription = asSubscription(subscriptionItem);
-      if (
-        account.userId !== command.userId ||
-        subscription.userId !== command.userId ||
-        !['ACTIVE', 'GRACE_PERIOD', 'BILLING_ISSUE', 'CANCELLED_PENDING_EXPIRY'].includes(
-          subscription.status,
-        ) ||
-        subscription.currentPeriodEnd <= now ||
-        account.activePeriodId === undefined
-      ) {
-        throw new DomainError('INELIGIBLE_SUBSCRIPTION');
-      }
-      const periodItem = await this.getItem(this.tables.period, account.activePeriodId);
-      if (periodItem === undefined) throw new DomainError('NO_ACTIVE_POINT_PERIOD');
-      const period = asPeriod(periodItem);
-      if (
-        period.userId !== command.userId ||
-        period.environment !== this.environment ||
-        period.status !== 'ACTIVE' ||
-        period.periodEnd <= now
-      ) {
-        throw new DomainError('NO_ACTIVE_POINT_PERIOD');
-      }
-
-      const deducted = Math.min(
-        PLATFORM_CONFIG.snoozePointDeduction,
-        Math.max(0, account.currentBalance),
-      );
-      const balance = account.currentBalance - deducted;
-      const transactionId = sha256(`transaction:${idempotencyKey}`);
-      const result: SnoozeResult = {
+      return {
         accepted: true,
         duplicate: false,
-        pointsDeducted: deducted,
-        officialBalance: balance,
-        activePointPeriodId: period.id,
+        pointsDeducted: 0,
+        officialBalance: 0,
+        activePointPeriodId: 'earned-points',
         serverTimestamp: now,
       };
-      try {
-        await this.client.send(
-          new TransactWriteCommand({
-            TransactItems: [
-              {
-                Put: {
-                  TableName: this.tables.snooze,
-                  Item: {
-                    id: snoozeId,
-                    userId: command.userId,
-                    environment: this.environment,
-                    alarmId: command.alarmId,
-                    alarmOccurrenceId: command.alarmOccurrenceId,
-                    occurredAt: command.occurredAt,
-                    receivedAt: now,
-                    status: 'ACCEPTED',
-                    ledgerTransactionId: transactionId,
-                    activePointPeriodId: period.id,
-                    pointsDeducted: deducted,
-                    officialBalance: balance,
-                    clientAppVersion: command.clientAppVersion,
-                    legacyPurchaseReference: command.legacyPurchaseReference,
-                    createdAt: now,
-                    updatedAt: now,
-                  },
-                  ConditionExpression: 'attribute_not_exists(id)',
-                },
-              },
-              {
-                Put: {
-                  TableName: this.tables.transaction,
-                  Item: {
-                    id: transactionId,
-                    userId: command.userId,
-                    environment: this.environment,
-                    userEnvironment: `${command.userId}:${this.environment}`,
-                    pointPeriodId: period.id,
-                    amount: -deducted,
-                    transactionType: 'SNOOZE_DEDUCTION',
-                    reasonCode: 'DISCIPOINT_SNOOZE',
-                    source: 'IOS_APP',
-                    idempotencyKey,
-                    sourceEventId: command.snoozeEventId,
-                    relatedEventId: command.alarmOccurrenceId,
-                    balanceAfter: balance,
-                    createdAt: now,
-                    updatedAt: now,
-                    metadataJson: {
-                      alarmId: command.alarmId,
-                      clientAppVersion: command.clientAppVersion,
-                      legacyPurchaseReference: command.legacyPurchaseReference,
-                    },
-                  },
-                  ConditionExpression: 'attribute_not_exists(id)',
-                },
-              },
-              {
-                Update: {
-                  TableName: this.tables.account,
-                  Key: { id: account.id },
-                  UpdateExpression:
-                    'SET currentBalance = :balance, lifetimeDeducted = lifetimeDeducted + :deducted, version = version + :one, updatedAt = :now',
-                  ConditionExpression:
-                    'version = :version AND activePeriodId = :periodId AND currentBalance = :oldBalance',
-                  ExpressionAttributeValues: {
-                    ':balance': balance,
-                    ':deducted': deducted,
-                    ':one': 1,
-                    ':now': now,
-                    ':version': account.version,
-                    ':periodId': period.id,
-                    ':oldBalance': account.currentBalance,
-                  },
-                },
-              },
-              {
-                Update: {
-                  TableName: this.tables.period,
-                  Key: { id: period.id },
-                  UpdateExpression: 'SET currentRemaining = :balance, updatedAt = :now',
-                  ConditionExpression: 'userId = :userId AND currentRemaining = :oldBalance',
-                  ExpressionAttributeValues: {
-                    ':balance': balance,
-                    ':now': now,
-                    ':userId': command.userId,
-                    ':oldBalance': account.currentBalance,
-                  },
-                },
-              },
-            ],
-          }),
-        );
-        return result;
-      } catch (error) {
-        if (!isConditionalFailure(error) || attempt === 3) throw error;
-      }
+    } catch (error) {
+      if (isConditionalFailure(error)) return this.recordSnooze(command, now);
+      throw error;
     }
-    throw new DomainError('CONCURRENT_UPDATE_RETRY_EXHAUSTED');
   }
 
   public async linkRevenueCatCustomer(input: {

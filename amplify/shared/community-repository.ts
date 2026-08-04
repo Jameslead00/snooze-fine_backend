@@ -2,5 +2,5 @@ import type { CommunityDashboard, CommunityVoteResult } from './community-types.
 
 export interface CommunityRepository {
   dashboard: (userId: string, now: string) => Promise<CommunityDashboard>;
-  castVote: (userId: string, charityId: string, now: string) => Promise<CommunityVoteResult>;
+  allocatePoints: (userId: string, charityId: string, now: string) => Promise<CommunityVoteResult>;
 }

@@ -14,6 +14,12 @@ import {
   DynamoPlatformRepository,
   tableNamesFromEnvironment,
 } from '../../shared/dynamo-repository.js';
+import {
+  DynamoEarnedPointsRepository,
+  earnedPointsTableNamesFromEnvironment,
+} from '../../shared/dynamo-earned-points-repository.js';
+import type { EarnedPointsRepository } from '../../shared/earned-points-repository.js';
+import { PLATFORM_CONFIG } from '../../shared/config.js';
 import { DomainError } from '../../shared/domain.js';
 import {
   DynamoHabitRepository,
@@ -29,7 +35,6 @@ import type { PlatformRepository } from '../../shared/repository.js';
 import type { SyncRepository } from '../../shared/sync-repository.js';
 import {
   archiveSyncedAlarmArgumentsSchema,
-  charityVoteArgumentsSchema,
   listTransactionsArgumentsSchema,
   recordEngagementArgumentsSchema,
   recordWakeCompletionArgumentsSchema,
@@ -54,8 +59,9 @@ export type AccountApiEvent = {
 
 export type AccountApiRepository = Pick<
   PlatformRepository,
-  'getPointAccountView' | 'getCommunityDonationProjection' | 'listPointTransactions'
+  'getPointAccountView' | 'listPointTransactions'
 > &
+  EarnedPointsRepository &
   SyncRepository &
   CommunityRepository &
   EngagementRepository & {
@@ -71,6 +77,18 @@ export async function handleAccountApiEvent(
   if (event.fieldName === 'getMyPointAccount') {
     const view = await repository.getPointAccountView(userId, now);
     return { ...view, donationMicroUsd: String(view.donationMicroUsd) };
+  }
+  if (event.fieldName === 'getMyEarnedPointAccount') {
+    const account = await repository.getDisciPointAccount(userId, now);
+    return {
+      isEligible: true,
+      earnedPointsTotal: account.currentPoints,
+      activeBallotId: undefined,
+      activeBallotEarnedPoints: 0,
+      activeBallotAllocatedVotes: 0,
+      subscriptionStatus: 'ACTIVE',
+      serverTimestamp: now,
+    };
   }
   if (event.fieldName === 'listMyPointTransactions') {
     const arguments_ = listTransactionsArgumentsSchema.parse(event.arguments);
@@ -95,6 +113,10 @@ export async function handleAccountApiEvent(
       nextToken: page.nextToken,
     };
   }
+  if (event.fieldName === 'listMyPointAwards') {
+    const arguments_ = listTransactionsArgumentsSchema.parse(event.arguments);
+    return repository.listPointAwards(userId, arguments_.limit ?? 50, arguments_.nextToken);
+  }
   if (event.fieldName === 'listMySyncedAlarms') {
     return repository.listAlarms(userId);
   }
@@ -115,10 +137,21 @@ export async function handleAccountApiEvent(
   if (event.fieldName === 'recordWakeCompletion') {
     const input = recordWakeCompletionArgumentsSchema.parse(event.arguments.input);
     const result = await repository.recordWake({ userId, ...input }, now);
+    const earning = await repository.earnPoints(
+      {
+        userId,
+        qualification: 'WAKE_COMPLETION',
+        sourceEventId: result.event.id,
+        points: PLATFORM_CONFIG.wakeCompletionPointEarned,
+      },
+      now,
+    );
     return {
       accepted: true,
       duplicate: result.duplicate,
       snoozeCount: result.event.snoozeCount,
+      pointsAwarded: earning.pointsEarned,
+      earnedPointsTotal: earning.currentPoints,
       serverTimestamp: now,
     };
   }
@@ -129,22 +162,22 @@ export async function handleAccountApiEvent(
     return repository.weeklyProgressRecap(userId, now);
   }
   if (event.fieldName === 'getCommunityDashboard') {
-    const [dashboard, account, projection] = await Promise.all([
-      repository.dashboard(userId, now),
-      repository.getPointAccountView(userId, now),
-      repository.getCommunityDonationProjection(now),
-    ]);
-    return {
-      ...dashboard,
-      canVoteToday: dashboard.canVoteToday && account.isEligible,
-      projectedDonationMicroUsd: String(projection.expectedDonationMicroUsd),
-    };
+    return repository.dashboard(userId, now);
   }
-  if (event.fieldName === 'castMyDailyCharityVote') {
-    const input = charityVoteArgumentsSchema.parse(event.arguments);
-    const account = await repository.getPointAccountView(userId, now);
-    if (!account.isEligible) throw new DomainError('SUBSCRIPTION_NOT_ELIGIBLE');
-    return repository.castVote(userId, input.charityId, now);
+  if (event.fieldName === 'allocateMyCharityVotes') {
+    const raw = event.arguments.input;
+    if (typeof raw !== 'object' || raw === null) throw new DomainError('INVALID_VOTE_ALLOCATION');
+    const input = raw as Record<string, unknown>;
+    if (
+      typeof input.charityId !== 'string' ||
+      typeof input.ballotId !== 'string' ||
+      typeof input.allocationEventId !== 'string' ||
+      !Number.isInteger(input.allocatedVotes) ||
+      Number(input.allocatedVotes) < 0
+    ) {
+      throw new DomainError('INVALID_VOTE_ALLOCATION');
+    }
+    return repository.allocatePoints(userId, input.charityId, now);
   }
   if (event.fieldName === 'recordMyEngagement') {
     const input = recordEngagementArgumentsSchema.parse(event.arguments.input);
@@ -166,6 +199,10 @@ export const handler = async (event: AccountApiEvent): Promise<unknown> => {
     tableNamesFromEnvironment(),
     configuredEnvironment(),
   );
+  const earnedPoints = new DynamoEarnedPointsRepository(
+    earnedPointsTableNamesFromEnvironment(),
+    configuredEnvironment(),
+  );
   const sync = new DynamoSyncRepository(syncTableNamesFromEnvironment(), configuredEnvironment());
   const habits = new DynamoHabitRepository(
     habitTableNamesFromEnvironment(),
@@ -181,7 +218,10 @@ export const handler = async (event: AccountApiEvent): Promise<unknown> => {
   );
   const repository: AccountApiRepository = {
     getPointAccountView: (userId, now) => platform.getPointAccountView(userId, now),
-    getCommunityDonationProjection: (now) => platform.getCommunityDonationProjection(now),
+    getDisciPointAccount: (userId, now) => earnedPoints.getDisciPointAccount(userId, now),
+    earnPoints: (command, now) => earnedPoints.earnPoints(command, now),
+    listPointAwards: (userId, limit, nextToken) =>
+      earnedPoints.listPointAwards(userId, limit, nextToken),
     listPointTransactions: (userId, limit, nextToken) =>
       platform.listPointTransactions(userId, limit, nextToken),
     listAlarms: (userId) => sync.listAlarms(userId),
@@ -202,7 +242,7 @@ export const handler = async (event: AccountApiEvent): Promise<unknown> => {
         now,
       ),
     dashboard: (userId, now) => community.dashboard(userId, now),
-    castVote: (userId, charityId, now) => community.castVote(userId, charityId, now),
+    allocatePoints: (userId, charityId, now) => community.allocatePoints(userId, charityId, now),
     recordEngagement: (command, now) => engagement.recordEngagement(command, now),
   };
   return handleAccountApiEvent(event, repository);

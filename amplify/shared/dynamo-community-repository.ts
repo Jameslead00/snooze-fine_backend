@@ -13,15 +13,15 @@ import type {
   CommunityVoteResult,
 } from './community-types.js';
 import { DomainError } from './domain.js';
-import { localParts } from './habits.js';
 import { sha256 } from './security.js';
 
 export interface CommunityTableNames {
   charity: string;
   ballot: string;
-  vote: string;
-  donation: string;
+  allocation: string;
+  contribution: string;
   profile: string;
+  pointAccount: string;
 }
 
 const requiredEnvironmentVariable = (name: string): string => {
@@ -34,9 +34,10 @@ export function communityTableNamesFromEnvironment(): CommunityTableNames {
   return {
     charity: requiredEnvironmentVariable('CHARITY_TABLE_NAME'),
     ballot: requiredEnvironmentVariable('COMMUNITY_BALLOT_TABLE_NAME'),
-    vote: requiredEnvironmentVariable('DAILY_CHARITY_VOTE_TABLE_NAME'),
-    donation: requiredEnvironmentVariable('DONATION_RECORD_TABLE_NAME'),
+    allocation: requiredEnvironmentVariable('CHARITY_BALLOT_ALLOCATION_TABLE_NAME'),
+    contribution: requiredEnvironmentVariable('COMPANY_CONTRIBUTION_TABLE_NAME'),
     profile: requiredEnvironmentVariable('USER_PROFILE_TABLE_NAME'),
+    pointAccount: requiredEnvironmentVariable('DISCIPOINT_ACCOUNT_TABLE_NAME'),
   };
 }
 
@@ -52,7 +53,8 @@ interface BallotItem extends Record<string, unknown> {
   tallies: Record<string, number>;
   totalVotes: number;
   winnerCharityId?: string | undefined;
-  donationRecordId?: string | undefined;
+  companyContributionId?: string | undefined;
+  totalAllocatedPoints: number;
 }
 
 const asBallot = (item: Record<string, unknown>): BallotItem => ({
@@ -71,8 +73,13 @@ const asBallot = (item: Record<string, unknown>): BallotItem => ({
       : {},
   totalVotes: Number(item.totalVotes),
   winnerCharityId: typeof item.winnerCharityId === 'string' ? item.winnerCharityId : undefined,
-  donationRecordId: typeof item.donationRecordId === 'string' ? item.donationRecordId : undefined,
+  companyContributionId:
+    typeof item.companyContributionId === 'string' ? item.companyContributionId : undefined,
+  totalAllocatedPoints: Number(item.totalAllocatedPoints ?? item.totalVotes ?? 0),
 });
+
+const allocationId = (userId: string, ballotId: string, environment: RevenueCatEnvironment): string =>
+  sha256(`charity-ballot-allocation:${userId}:${environment}:${ballotId}`);
 
 const percentageFor = (votes: number, totalVotes: number): number =>
   totalVotes > 0 ? (votes / totalVotes) * 100 : 0;
@@ -99,14 +106,20 @@ export class DynamoCommunityRepository implements CommunityRepository {
         status: 'NOT_PUBLISHED',
         charities: [],
         totalVotes: 0,
-        canVoteToday: false,
+        earnedVotes: 0,
+        allocatedVotes: 0,
+        availableVotes: 0,
+        canAllocateVotes: false,
         serverTimestamp: now,
       };
     }
-    const timezone = await this.timezone(userId);
-    const localVoteDate = localParts(now, timezone).date;
-    const voteId = sha256(`daily-vote:${userId}:${ballot.id}:${localVoteDate}`);
-    const vote = await this.item(this.tables.vote, voteId);
+    const account = await this.item(this.tables.pointAccount, `${userId}:${this.environment}`);
+    const currentPoints = Math.max(0, Number(account?.currentPoints ?? 0));
+    const allocation = await this.item(
+      this.tables.allocation,
+      allocationId(userId, ballot.id, this.environment),
+    );
+    const pointsAllocated = Math.max(0, Number(allocation?.pointsAllocated ?? 0));
     const charities: CommunityCharity[] = [];
     for (const charityId of ballot.charityIds) {
       const item = await this.item(this.tables.charity, charityId);
@@ -119,12 +132,13 @@ export class DynamoCommunityRepository implements CommunityRepository {
         impactLabel: typeof item.impactLabel === 'string' ? item.impactLabel : undefined,
         votes: ballot.tallies[charityId] ?? 0,
         votePercentage: percentageFor(ballot.tallies[charityId] ?? 0, ballot.totalVotes),
+        myAllocatedVotes: allocation?.charityId === charityId ? pointsAllocated : 0,
       });
     }
-    const donation =
-      ballot.donationRecordId === undefined
+    const contribution =
+      ballot.companyContributionId === undefined
         ? undefined
-        : await this.item(this.tables.donation, ballot.donationRecordId);
+        : await this.item(this.tables.contribution, ballot.companyContributionId);
     const isOpen = ballot.status === 'OPEN' && ballot.opensAt <= now && ballot.closesAt > now;
     return {
       ballotId: ballot.id,
@@ -134,24 +148,19 @@ export class DynamoCommunityRepository implements CommunityRepository {
       closesAt: ballot.closesAt,
       charities,
       totalVotes: ballot.totalVotes,
-      myVoteCharityId: typeof vote?.charityId === 'string' ? vote.charityId : undefined,
-      canVoteToday: isOpen && vote === undefined,
+      earnedVotes: currentPoints,
+      allocatedVotes: pointsAllocated,
+      availableVotes: Math.max(0, currentPoints - pointsAllocated),
+      canAllocateVotes: isOpen && currentPoints > pointsAllocated,
       winnerCharityId: ballot.winnerCharityId,
-      donationStatus: typeof donation?.status === 'string' ? donation.status : undefined,
-      expectedDonationMicroUsd:
-        typeof donation?.expectedDonationMicroUsd === 'string'
-          ? donation.expectedDonationMicroUsd
-          : undefined,
-      paidDonationMicroUsd:
-        typeof donation?.paidDonationMicroUsd === 'string'
-          ? donation.paidDonationMicroUsd
-          : undefined,
-      evidenceUrl: typeof donation?.evidenceUrl === 'string' ? donation.evidenceUrl : undefined,
+      contributionStatus:
+        typeof contribution?.status === 'string' ? contribution.status : undefined,
+      evidenceUrl: typeof contribution?.evidenceUrl === 'string' ? contribution.evidenceUrl : undefined,
       serverTimestamp: now,
     };
   }
 
-  public async castVote(
+  public async allocatePoints(
     userId: string,
     charityId: string,
     now: string,
@@ -169,30 +178,39 @@ export class DynamoCommunityRepository implements CommunityRepository {
     if (ballot.tallies[charityId] === undefined) {
       throw new DomainError('BALLOT_TALLY_NOT_INITIALIZED');
     }
-    const timezone = await this.timezone(userId);
-    const localVoteDate = localParts(now, timezone).date;
-    const voteId = sha256(`daily-vote:${userId}:${ballot.id}:${localVoteDate}`);
-    const prior = await this.item(this.tables.vote, voteId);
-    if (prior !== undefined) {
-      if (prior.charityId !== charityId) throw new DomainError('ALREADY_VOTED_TODAY');
+    const account = await this.item(this.tables.pointAccount, `${userId}:${this.environment}`);
+    const currentPoints = Math.max(0, Number(account?.currentPoints ?? 0));
+    const id = allocationId(userId, ballot.id, this.environment);
+    const prior = await this.item(this.tables.allocation, id);
+    if (prior !== undefined && prior.charityId !== charityId) {
+      throw new DomainError('CHARITY_ALLOCATION_LOCKED');
+    }
+    const previousPoints = Math.max(0, Number(prior?.pointsAllocated ?? 0));
+    const newlyAllocatedPoints = Math.max(0, currentPoints - previousPoints);
+    if (newlyAllocatedPoints === 0) {
       return {
         accepted: true,
         duplicate: true,
         charityId,
-        localVoteDate,
-        totalVotes: ballot.totalVotes,
+        ballotId: ballot.id,
+        charityAllocatedVotes: previousPoints,
+        allocatedVotes: previousPoints,
+        availableVotes: 0,
+        totalVotes: ballot.totalAllocatedPoints,
         serverTimestamp: now,
       };
     }
-    const vote = {
-      id: voteId,
+    const allocation = {
+      id,
       userId,
       environment: this.environment,
       ballotId: ballot.id,
       charityId,
-      localVoteDate,
-      timezone,
-      createdAt: now,
+      userEnvironmentBallot: `${userId}:${this.environment}:${ballot.id}`,
+      pointsAllocated: currentPoints,
+      version: Number(prior?.version ?? 0) + 1,
+      createdAt: typeof prior?.createdAt === 'string' ? prior.createdAt : now,
+      updatedAt: now,
     };
     try {
       await this.client.send(
@@ -200,9 +218,18 @@ export class DynamoCommunityRepository implements CommunityRepository {
           TransactItems: [
             {
               Put: {
-                TableName: this.tables.vote,
-                Item: vote,
-                ConditionExpression: 'attribute_not_exists(id)',
+                TableName: this.tables.allocation,
+                Item: allocation,
+                ConditionExpression:
+                  prior === undefined
+                    ? 'attribute_not_exists(id)'
+                    : '#allocationVersion = :allocationVersion AND charityId = :charityId',
+                ExpressionAttributeNames:
+                  prior === undefined ? undefined : { '#allocationVersion': 'version' },
+                ExpressionAttributeValues:
+                  prior === undefined
+                    ? undefined
+                    : { ':allocationVersion': Number(prior.version), ':charityId': charityId },
               },
             },
             {
@@ -210,7 +237,7 @@ export class DynamoCommunityRepository implements CommunityRepository {
                 TableName: this.tables.ballot,
                 Key: { id: ballot.id },
                 UpdateExpression:
-                  'SET totalVotes = totalVotes + :one, #tallies.#charity = #tallies.#charity + :one, #version = #version + :one, updatedAt = :now',
+                  'SET totalVotes = totalVotes + :points, totalAllocatedPoints = if_not_exists(totalAllocatedPoints, totalVotes) + :points, #tallies.#charity = #tallies.#charity + :points, #version = #version + :one, updatedAt = :now',
                 ConditionExpression:
                   '#status = :open AND opensAt <= :now AND closesAt > :now AND contains(charityIds, :charityId)',
                 ExpressionAttributeNames: {
@@ -221,6 +248,7 @@ export class DynamoCommunityRepository implements CommunityRepository {
                 },
                 ExpressionAttributeValues: {
                   ':one': 1,
+                  ':points': newlyAllocatedPoints,
                   ':now': now,
                   ':open': 'OPEN',
                   ':charityId': charityId,
@@ -234,24 +262,30 @@ export class DynamoCommunityRepository implements CommunityRepository {
         accepted: true,
         duplicate: false,
         charityId,
-        localVoteDate,
-        totalVotes: ballot.totalVotes + 1,
+        ballotId: ballot.id,
+        charityAllocatedVotes: currentPoints,
+        allocatedVotes: currentPoints,
+        availableVotes: 0,
+        totalVotes: ballot.totalAllocatedPoints + newlyAllocatedPoints,
         serverTimestamp: now,
       };
     } catch (error) {
       if (error instanceof Error && error.name === 'TransactionCanceledException') {
-        const concurrentVote = await this.item(this.tables.vote, voteId);
-        if (concurrentVote !== undefined) {
-          if (concurrentVote.charityId !== charityId) {
-            throw new DomainError('ALREADY_VOTED_TODAY');
+        const concurrentAllocation = await this.item(this.tables.allocation, id);
+        if (concurrentAllocation !== undefined) {
+          if (concurrentAllocation.charityId !== charityId) {
+            throw new DomainError('CHARITY_ALLOCATION_LOCKED');
           }
           const refreshedBallot = await this.currentBallot(now);
           return {
             accepted: true,
             duplicate: true,
             charityId,
-            localVoteDate,
-            totalVotes: refreshedBallot?.totalVotes ?? ballot.totalVotes,
+            ballotId: ballot.id,
+            charityAllocatedVotes: Number(concurrentAllocation.pointsAllocated ?? 0),
+            allocatedVotes: Number(concurrentAllocation.pointsAllocated ?? 0),
+            availableVotes: 0,
+            totalVotes: refreshedBallot?.totalAllocatedPoints ?? ballot.totalAllocatedPoints,
             serverTimestamp: now,
           };
         }

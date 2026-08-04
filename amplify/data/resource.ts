@@ -147,6 +147,43 @@ const schema = a.schema({
     ])
     .authorization((allow) => [allow.group('ADMINS').to(['read'])]),
 
+  // The earned-points ledger is the App Store-safe successor to the legacy
+  // subscription allocation and deduction records above. It has no monetary
+  // fields and only records positive, idempotent qualification events.
+  DisciPointAccount: a
+    .model({
+      id: a.id().required(),
+      userId: a.id().required(),
+      environment: a.enum(['SANDBOX', 'PRODUCTION']),
+      userEnvironment: a.string().required(),
+      currentPoints: a.integer().required(),
+      lifetimeEarned: a.integer().required(),
+      version: a.integer().required(),
+      createdAt: a.datetime().required(),
+      updatedAt: a.datetime().required(),
+    })
+    .secondaryIndexes((index) => [
+      index('userEnvironment').sortKeys(['updatedAt']).name('byUserEnvironmentAndUpdatedAt'),
+    ])
+    .authorization((allow) => [allow.group('ADMINS').to(['read'])]),
+
+  DisciPointEarnEvent: a
+    .model({
+      id: a.id().required(),
+      userId: a.id().required(),
+      environment: a.enum(['SANDBOX', 'PRODUCTION']),
+      userEnvironment: a.string().required(),
+      qualification: a.enum(['WAKE_COMPLETION', 'HABIT_COMPLETION']),
+      sourceEventId: a.string().required(),
+      pointsEarned: a.integer().required(),
+      pointsAfter: a.integer().required(),
+      createdAt: a.datetime().required(),
+    })
+    .secondaryIndexes((index) => [
+      index('userEnvironment').sortKeys(['createdAt']).name('byUserEnvironmentAndCreatedAt'),
+    ])
+    .authorization((allow) => [allow.group('ADMINS').to(['read'])]),
+
   SnoozeEvent: a
     .model({
       id: a.id().required(),
@@ -365,6 +402,8 @@ const schema = a.schema({
       totalVotes: a.integer().required(),
       winnerCharityId: a.id(),
       donationRecordId: a.id(),
+      companyContributionId: a.id(),
+      totalAllocatedPoints: a.integer(),
       version: a.integer().required(),
       updatedAt: a.datetime().required(),
     })
@@ -387,6 +426,48 @@ const schema = a.schema({
     .secondaryIndexes((index) => [
       index('ballotId').sortKeys(['createdAt']).name('byBallotAndCreatedAt'),
       index('userId').sortKeys(['createdAt']).name('byUserAndCreatedAt'),
+    ])
+    .authorization((allow) => [allow.group('ADMINS').to(['read'])]),
+
+  CharityBallotAllocation: a
+    .model({
+      id: a.id().required(),
+      userId: a.id().required(),
+      environment: a.enum(['SANDBOX', 'PRODUCTION']),
+      userEnvironmentBallot: a.string().required(),
+      ballotId: a.id().required(),
+      charityId: a.id().required(),
+      pointsAllocated: a.integer().required(),
+      version: a.integer().required(),
+      createdAt: a.datetime().required(),
+      updatedAt: a.datetime().required(),
+    })
+    .secondaryIndexes((index) => [
+      index('userEnvironmentBallot').sortKeys(['updatedAt']).name('byUserEnvironmentBallot'),
+      index('ballotId').sortKeys(['updatedAt']).name('byBallotAndUpdatedAt'),
+    ])
+    .authorization((allow) => [allow.group('ADMINS').to(['read'])]),
+
+  CompanyContribution: a
+    .model({
+      id: a.id().required(),
+      ballotId: a.id().required(),
+      month: a.string().required(),
+      environment: a.enum(['SANDBOX', 'PRODUCTION']),
+      charityId: a.id().required(),
+      commitmentType: a.enum(['FIXED', 'CAPPED']),
+      currency: a.string().required(),
+      maximumAmountMinor: a.integer().required(),
+      approvedAmountMinor: a.integer(),
+      paidAmountMinor: a.integer(),
+      status: a.enum(['PLANNED', 'APPROVED', 'PAID', 'EVIDENCED', 'VOID']),
+      paidAt: a.datetime(),
+      evidenceUrl: a.url(),
+      ownerNote: a.string(),
+      updatedAt: a.datetime().required(),
+    })
+    .secondaryIndexes((index) => [
+      index('environment').sortKeys(['month']).name('byEnvironmentAndMonth'),
     ])
     .authorization((allow) => [allow.group('ADMINS').to(['read'])]),
 
@@ -437,9 +518,7 @@ const schema = a.schema({
   RecordSnoozeResult: a.customType({
     accepted: a.boolean().required(),
     duplicate: a.boolean().required(),
-    pointsDeducted: a.integer().required(),
-    officialBalance: a.integer().required(),
-    activePointPeriodId: a.id().required(),
+    snoozeCount: a.integer().required(),
     serverTimestamp: a.datetime().required(),
   }),
   PointAccountResult: a.customType({
@@ -453,6 +532,31 @@ const schema = a.schema({
     subscriptionStatus: a.string().required(),
     donationMicroUsd: a.string().required(),
     serverTimestamp: a.datetime().required(),
+  }),
+  EarnedPointAccountResult: a.customType({
+    isEligible: a.boolean().required(),
+    earnedPointsTotal: a.integer().required(),
+    activeBallotId: a.id(),
+    activeBallotEarnedPoints: a.integer().required(),
+    activeBallotAllocatedVotes: a.integer().required(),
+    subscriptionStatus: a.string().required(),
+    serverTimestamp: a.datetime().required(),
+  }),
+  PointAwardResult: a.customType({
+    id: a.id().required(),
+    achievementType: a.string().required(),
+    pointsAwarded: a.integer().required(),
+    reasonCode: a.string().required(),
+    source: a.string().required(),
+    sourceEventId: a.string().required(),
+    relatedEventId: a.string(),
+    earnedPointsTotalAfter: a.integer().required(),
+    ballotId: a.id(),
+    createdAt: a.datetime().required(),
+  }),
+  PointAwardPage: a.customType({
+    items: a.ref('PointAwardResult').array().required(),
+    nextToken: a.string(),
   }),
   PointTransactionResult: a.customType({
     id: a.id().required(),
@@ -531,6 +635,8 @@ const schema = a.schema({
     targetValue: a.integer().required(),
     status: a.string().required(),
     officialBalance: a.integer().required(),
+    pointsAwarded: a.integer().required(),
+    earnedPointsTotal: a.integer().required(),
     serverTimestamp: a.datetime().required(),
   }),
   SaveSyncedAlarmInput: a.customType({
@@ -574,6 +680,8 @@ const schema = a.schema({
     accepted: a.boolean().required(),
     duplicate: a.boolean().required(),
     snoozeCount: a.integer().required(),
+    pointsAwarded: a.integer().required(),
+    earnedPointsTotal: a.integer().required(),
     serverTimestamp: a.datetime().required(),
   }),
   AccountabilityStatisticsResult: a.customType({
@@ -583,9 +691,8 @@ const schema = a.schema({
     allTimeSnoozes: a.integer().required(),
     allTimeWakeUps: a.integer().required(),
     allTimeNoSnoozeMornings: a.integer().required(),
-    currentBalance: a.integer().required(),
-    currentPeriodDeducted: a.integer().required(),
-    lifetimeDeducted: a.integer().required(),
+    earnedPointsTotal: a.integer().required(),
+    activeBallotEarnedPoints: a.integer().required(),
     timezone: a.string().required(),
     serverTimestamp: a.datetime().required(),
   }),
@@ -621,6 +728,7 @@ const schema = a.schema({
     impactLabel: a.string(),
     votes: a.integer().required(),
     votePercentage: a.float().required(),
+    myAllocatedVotes: a.integer().required(),
   }),
   CommunityDashboardResult: a.customType({
     ballotId: a.id(),
@@ -632,6 +740,11 @@ const schema = a.schema({
     totalVotes: a.integer().required(),
     myVoteCharityId: a.id(),
     canVoteToday: a.boolean().required(),
+    earnedVotes: a.integer().required(),
+    allocatedVotes: a.integer().required(),
+    availableVotes: a.integer().required(),
+    canAllocateVotes: a.boolean().required(),
+    contributionStatus: a.string(),
     winnerCharityId: a.id(),
     donationStatus: a.string(),
     projectedDonationMicroUsd: a.string(),
@@ -643,10 +756,19 @@ const schema = a.schema({
   CommunityVoteResult: a.customType({
     accepted: a.boolean().required(),
     duplicate: a.boolean().required(),
+    ballotId: a.id().required(),
     charityId: a.id().required(),
-    localVoteDate: a.date().required(),
+    charityAllocatedVotes: a.integer().required(),
+    allocatedVotes: a.integer().required(),
+    availableVotes: a.integer().required(),
     totalVotes: a.integer().required(),
     serverTimestamp: a.datetime().required(),
+  }),
+  AllocateCharityVotesInput: a.customType({
+    allocationEventId: a.id().required(),
+    ballotId: a.id().required(),
+    charityId: a.id().required(),
+    allocatedVotes: a.integer().required(),
   }),
   AccountDeletionRequestResult: a.customType({
     accepted: a.boolean().required(),
@@ -697,10 +819,23 @@ const schema = a.schema({
     .authorization((allow) => [allow.authenticated()])
     .handler(a.handler.function(accountApiFunction)),
 
+  getMyEarnedPointAccount: a
+    .query()
+    .returns(a.ref('EarnedPointAccountResult'))
+    .authorization((allow) => [allow.authenticated()])
+    .handler(a.handler.function(accountApiFunction)),
+
   listMyPointTransactions: a
     .query()
     .arguments({ limit: a.integer(), nextToken: a.string() })
     .returns(a.ref('PointTransactionPage'))
+    .authorization((allow) => [allow.authenticated()])
+    .handler(a.handler.function(accountApiFunction)),
+
+  listMyPointAwards: a
+    .query()
+    .arguments({ limit: a.integer(), nextToken: a.string() })
+    .returns(a.ref('PointAwardPage'))
     .authorization((allow) => [allow.authenticated()])
     .handler(a.handler.function(accountApiFunction)),
 
@@ -779,6 +914,13 @@ const schema = a.schema({
   castMyDailyCharityVote: a
     .mutation()
     .arguments({ charityId: a.id().required() })
+    .returns(a.ref('CommunityVoteResult'))
+    .authorization((allow) => [allow.authenticated()])
+    .handler(a.handler.function(accountApiFunction)),
+
+  allocateMyCharityVotes: a
+    .mutation()
+    .arguments({ input: a.ref('AllocateCharityVotesInput').required() })
     .returns(a.ref('CommunityVoteResult'))
     .authorization((allow) => [allow.authenticated()])
     .handler(a.handler.function(accountApiFunction)),

@@ -1,6 +1,12 @@
 import type { AppSyncIdentity } from 'aws-lambda';
 import { cognitoSub } from '../../shared/appsync.js';
 import { configuredEnvironment } from '../../shared/config.js';
+import { PLATFORM_CONFIG } from '../../shared/config.js';
+import {
+  DynamoEarnedPointsRepository,
+  earnedPointsTableNamesFromEnvironment,
+} from '../../shared/dynamo-earned-points-repository.js';
+import type { EarnedPointsRepository } from '../../shared/earned-points-repository.js';
 import {
   DynamoHabitRepository,
   habitTableNamesFromEnvironment,
@@ -49,7 +55,7 @@ const publicHabit = (habit: Awaited<ReturnType<typeof habitDashboard>>[number]) 
 
 export async function handleHabitApiEvent(
   event: HabitApiEvent,
-  repository: HabitRepository,
+  repository: HabitRepository & EarnedPointsRepository,
   now = new Date().toISOString(),
 ): Promise<unknown> {
   const userId = cognitoSub(event.identity);
@@ -81,7 +87,26 @@ export async function handleHabitApiEvent(
     }
     case 'reportHabitProgress': {
       const input = habitProgressArgumentsSchema.parse(event.arguments.input);
-      return reportHabitProgress(repository, { userId, ...input }, now);
+      const result = await reportHabitProgress(repository, { userId, ...input }, now);
+      const earning = result.completed
+        ? await repository.earnPoints(
+            {
+              userId,
+              qualification: 'HABIT_COMPLETION',
+              sourceEventId: `${input.habitId}:${result.localDate}`,
+              points: PLATFORM_CONFIG.habitCompletionPointEarned,
+            },
+            now,
+          )
+        : await repository.getDisciPointAccount(userId, now).then((account) => ({
+            pointsEarned: 0,
+            currentPoints: account.currentPoints,
+          }));
+      return {
+        ...result,
+        pointsAwarded: earning.pointsEarned,
+        earnedPointsTotal: earning.currentPoints,
+      };
     }
     default:
       throw new DomainError('UNSUPPORTED_OPERATION');
@@ -93,5 +118,9 @@ export const handler = async (event: HabitApiEvent): Promise<unknown> => {
     habitTableNamesFromEnvironment(),
     configuredEnvironment(),
   );
-  return handleHabitApiEvent(event, repository);
+  const earnedPoints = new DynamoEarnedPointsRepository(
+    earnedPointsTableNamesFromEnvironment(),
+    configuredEnvironment(),
+  );
+  return handleHabitApiEvent(event, { ...repository, ...earnedPoints });
 };

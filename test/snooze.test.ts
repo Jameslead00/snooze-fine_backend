@@ -22,27 +22,27 @@ async function eligibleRepository(): Promise<InMemoryRepository> {
 }
 
 describe('record snooze', () => {
-  it('deducts exactly 25 points once', async () => {
+  it('records a snooze without deducting points', async () => {
     const repository = await eligibleRepository();
 
     const result = await recordSnooze(repository, command, now);
 
-    expect(result.pointsDeducted).toBe(25);
-    expect(result.officialBalance).toBe(1_975);
+    expect(result.pointsDeducted).toBe(0);
+    expect(result.officialBalance).toBe(0);
   });
 
-  it('returns the original result for a duplicate without a second deduction', async () => {
+  it('returns the original zero-impact result for a duplicate', async () => {
     const repository = await eligibleRepository();
     await recordSnooze(repository, command, now);
 
     const duplicate = await recordSnooze(repository, command, '2026-07-02T12:01:00.000Z');
 
     expect(duplicate.duplicate).toBe(true);
-    expect(duplicate.officialBalance).toBe(1_975);
-    expect(repository.accounts.get('cognito-1')?.currentBalance).toBe(1_975);
+    expect(duplicate.officialBalance).toBe(0);
+    expect(repository.accounts.get('cognito-1')?.currentBalance).toBe(2_000);
   });
 
-  it('deducts only the remaining balance and never goes below zero', async () => {
+  it('does not depend on a point balance', async () => {
     const repository = await eligibleRepository();
     const account = repository.accounts.get('cognito-1');
     if (account === undefined) throw new Error('fixture account missing');
@@ -53,16 +53,16 @@ describe('record snooze', () => {
 
     const result = await recordSnooze(repository, command, now);
 
-    expect(result.pointsDeducted).toBe(10);
+    expect(result.pointsDeducted).toBe(0);
     expect(result.officialBalance).toBe(0);
   });
 
-  it('cannot use one authenticated identity to affect another user', async () => {
+  it('records each authenticated user independently', async () => {
     const repository = await eligibleRepository();
 
-    await expect(
-      recordSnooze(repository, { ...command, userId: 'cognito-2' }, now),
-    ).rejects.toMatchObject({ code: 'INELIGIBLE_SUBSCRIPTION' } satisfies Partial<DomainError>);
+    await expect(recordSnooze(repository, { ...command, userId: 'cognito-2' }, now)).resolves.toMatchObject({
+      pointsDeducted: 0,
+    });
     expect(repository.accounts.get('cognito-1')?.currentBalance).toBe(2_000);
   });
 
@@ -77,7 +77,7 @@ describe('record snooze', () => {
     ).rejects.toMatchObject({ code: 'STALE_EVENT' } satisfies Partial<DomainError>);
   });
 
-  it('rejects a stale or expired point period even when the subscription remains active', async () => {
+  it('does not require a subscription point period', async () => {
     const repository = await eligibleRepository();
     const account = repository.accounts.get('cognito-1');
     if (account?.activePeriodId === undefined) throw new Error('fixture account missing');
@@ -88,8 +88,6 @@ describe('record snooze', () => {
       status: 'EXPIRED',
     });
 
-    await expect(recordSnooze(repository, command, now)).rejects.toMatchObject({
-      code: 'NO_ACTIVE_POINT_PERIOD',
-    } satisfies Partial<DomainError>);
+    await expect(recordSnooze(repository, command, now)).resolves.toMatchObject({ pointsDeducted: 0 });
   });
 });
