@@ -12,9 +12,6 @@ export class InMemoryHabitRepository implements HabitRepository {
   public readonly habits = new Map<string, HabitDefinition>();
   public readonly occurrences = new Map<string, HabitOccurrence>();
   public readonly progressEvents = new Map<string, string>();
-  public readonly balances = new Map<string, number>();
-  public readonly deductions: Array<{ occurrenceId: string; amount: number }> = [];
-  public eligible = true;
 
   public async listHabits(userId: string): Promise<HabitDefinition[]> {
     return [...this.habits.values()].filter((habit) => habit.userId === userId);
@@ -28,7 +25,6 @@ export class InMemoryHabitRepository implements HabitRepository {
   public async saveHabit(
     command: SaveHabitCommand,
     startDate: string,
-    penaltyPoints: number,
     now: string,
   ): Promise<HabitDefinition> {
     const current = this.habits.get(command.habitId);
@@ -49,7 +45,6 @@ export class InMemoryHabitRepository implements HabitRepository {
       weekdays: command.weekdays,
       deadlineMinutes: command.deadlineMinutes,
       timezone: command.timezone,
-      penaltyPoints,
       startDate: current?.startDate ?? startDate,
       activeState: 'ACTIVE',
       version: (current?.version ?? 0) + 1,
@@ -121,14 +116,11 @@ export class InMemoryHabitRepository implements HabitRepository {
       return {
         duplicate: true,
         status: current.status,
-        pointsDeducted: current.pointsDeducted,
-        officialBalance: current.officialBalance,
       };
     }
     const missed: HabitOccurrence = {
       ...(current ?? input.occurrence),
       status: 'MISSED',
-      pointsDeducted: 0,
       missedAt: input.now,
       version: (current?.version ?? 0) + 1,
       updatedAt: input.now,
@@ -137,13 +129,7 @@ export class InMemoryHabitRepository implements HabitRepository {
     return {
       duplicate: false,
       status: missed.status,
-      pointsDeducted: 0,
-      officialBalance: missed.officialBalance,
     };
-  }
-
-  public async officialBalance(userId: string): Promise<number> {
-    return this.balances.get(userId) ?? 0;
   }
 
   public async listOccurrences(userId: string, localDate: string): Promise<HabitOccurrence[]> {
@@ -165,7 +151,6 @@ export class InMemoryHabitRepository implements HabitRepository {
       progressValue: occurrence.progressValue,
       targetValue: occurrence.targetValue,
       status: occurrence.status,
-      officialBalance: this.balances.get(occurrence.userId) ?? 0,
       serverTimestamp: now,
     };
   }

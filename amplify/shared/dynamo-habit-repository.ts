@@ -23,10 +23,6 @@ export interface HabitTableNames {
   habit: string;
   occurrence: string;
   progressEvent: string;
-  subscription: string;
-  period: string;
-  account: string;
-  transaction: string;
 }
 
 const requiredEnvironmentVariable = (name: string): string => {
@@ -40,10 +36,6 @@ export function habitTableNamesFromEnvironment(): HabitTableNames {
     habit: requiredEnvironmentVariable('HABIT_DEFINITION_TABLE_NAME'),
     occurrence: requiredEnvironmentVariable('HABIT_OCCURRENCE_TABLE_NAME'),
     progressEvent: requiredEnvironmentVariable('HABIT_PROGRESS_EVENT_TABLE_NAME'),
-    subscription: requiredEnvironmentVariable('SUBSCRIPTION_TABLE_NAME'),
-    period: requiredEnvironmentVariable('POINT_PERIOD_TABLE_NAME'),
-    account: requiredEnvironmentVariable('POINT_ACCOUNT_TABLE_NAME'),
-    transaction: requiredEnvironmentVariable('POINT_TRANSACTION_TABLE_NAME'),
   };
 }
 
@@ -51,9 +43,6 @@ const isConditionalFailure = (error: unknown): boolean =>
   error instanceof Error &&
   (error.name === 'TransactionCanceledException' ||
     error.name === 'ConditionalCheckFailedException');
-
-const accountId = (userId: string, environment: RevenueCatEnvironment): string =>
-  `${userId}:${environment}`;
 
 const asHabit = (item: Record<string, unknown>): HabitDefinition => {
   const kind = String(item.kind) as HabitDefinition['kind'];
@@ -77,7 +66,6 @@ const asHabit = (item: Record<string, unknown>): HabitDefinition => {
     weekdays: Array.isArray(item.weekdays) ? item.weekdays.map(Number) : [],
     deadlineMinutes: Number(item.deadlineMinutes),
     timezone: String(item.timezone),
-    penaltyPoints: Number(item.penaltyPoints),
     startDate: String(item.startDate),
     activeState: item.activeState === 'ARCHIVED' ? 'ARCHIVED' : 'ACTIVE',
     version: Number(item.version),
@@ -100,10 +88,6 @@ const asOccurrence = (item: Record<string, unknown>): HabitOccurrence => ({
   status: String(item.status) as HabitOccurrence['status'],
   completedAt: typeof item.completedAt === 'string' ? item.completedAt : undefined,
   missedAt: typeof item.missedAt === 'string' ? item.missedAt : undefined,
-  ledgerTransactionId:
-    typeof item.ledgerTransactionId === 'string' ? item.ledgerTransactionId : undefined,
-  pointsDeducted: Number(item.pointsDeducted),
-  officialBalance: Number(item.officialBalance),
   version: Number(item.version),
   createdAt: String(item.createdAt),
   updatedAt: String(item.updatedAt),
@@ -146,7 +130,6 @@ export class DynamoHabitRepository implements HabitRepository {
   public async saveHabit(
     command: SaveHabitCommand,
     startDate: string,
-    penaltyPoints: number,
     now: string,
   ): Promise<HabitDefinition> {
     const currentItem = await this.getItem(this.tables.habit, command.habitId);
@@ -168,7 +151,6 @@ export class DynamoHabitRepository implements HabitRepository {
       weekdays: command.weekdays,
       deadlineMinutes: command.deadlineMinutes,
       timezone: command.timezone,
-      penaltyPoints,
       startDate: current?.startDate ?? startDate,
       activeState: 'ACTIVE',
       version: (current?.version ?? 0) + 1,
@@ -235,8 +217,7 @@ export class DynamoHabitRepository implements HabitRepository {
       }
       const stored = await this.getItem(this.tables.occurrence, String(priorEvent.occurrenceId));
       if (stored === undefined) throw new DomainError('PROGRESS_EVENT_INCOMPLETE');
-      const officialBalance = await this.officialBalance(input.command.userId);
-      return this.progressResult(asOccurrence(stored), true, input.now, officialBalance);
+      return this.progressResult(asOccurrence(stored), true, input.now);
     }
 
     const currentItem = await this.getItem(this.tables.occurrence, input.occurrence.id);
@@ -294,8 +275,7 @@ export class DynamoHabitRepository implements HabitRepository {
           ],
         }),
       );
-      const officialBalance = await this.officialBalance(input.command.userId);
-      return this.progressResult(occurrence, false, input.now, officialBalance);
+      return this.progressResult(occurrence, false, input.now);
     } catch (error) {
       if (!isConditionalFailure(error) || attempt >= 4) throw error;
       return this.recordHabitProgressAttempt(input, attempt + 1);
@@ -328,8 +308,6 @@ export class DynamoHabitRepository implements HabitRepository {
       return {
         duplicate: true,
         status: current.status,
-        pointsDeducted: current.pointsDeducted,
-        officialBalance: current.officialBalance,
       };
     }
 
@@ -339,8 +317,6 @@ export class DynamoHabitRepository implements HabitRepository {
       ...(current ?? input.occurrence),
       status: 'MISSED',
       missedAt: input.now,
-      ledgerTransactionId: undefined,
-      pointsDeducted: 0,
       version: (current?.version ?? 0) + 1,
       updatedAt: input.now,
     };
@@ -349,19 +325,12 @@ export class DynamoHabitRepository implements HabitRepository {
       return {
         duplicate: false,
         status: 'MISSED',
-        pointsDeducted: 0,
-        officialBalance: missedWithoutDeduction.officialBalance,
       };
     } catch (error) {
       if (!isConditionalFailure(error) || attempt >= 4) throw error;
       return this.settleMissedHabitAttempt(input, attempt + 1);
     }
 
-  }
-
-  public async officialBalance(userId: string): Promise<number> {
-    const item = await this.getItem(this.tables.account, accountId(userId, this.environment));
-    return item === undefined ? 0 : Number(item.currentBalance);
   }
 
   public async listOccurrences(userId: string, localDate: string): Promise<HabitOccurrence[]> {
@@ -380,7 +349,6 @@ export class DynamoHabitRepository implements HabitRepository {
     occurrence: HabitOccurrence,
     duplicate: boolean,
     now: string,
-    officialBalance: number,
   ): HabitProgressResult {
     return {
       accepted: true,
@@ -390,7 +358,6 @@ export class DynamoHabitRepository implements HabitRepository {
       progressValue: occurrence.progressValue,
       targetValue: occurrence.targetValue,
       status: occurrence.status,
-      officialBalance,
       serverTimestamp: now,
     };
   }

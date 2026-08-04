@@ -6,10 +6,6 @@ const tables = {
   habit: 'habits',
   occurrence: 'occurrences',
   progressEvent: 'progress-events',
-  subscription: 'subscriptions',
-  period: 'periods',
-  account: 'accounts',
-  transaction: 'transactions',
 };
 
 const habitItem = (id: string, updatedAt: string) => ({
@@ -26,7 +22,6 @@ const habitItem = (id: string, updatedAt: string) => ({
   weekdays: [1, 2, 3, 4, 5, 6, 7],
   deadlineMinutes: 1_320,
   timezone: 'Europe/Zurich',
-  penaltyPoints: 25,
   startDate: '2026-07-01',
   activeState: 'ACTIVE',
   version: 1,

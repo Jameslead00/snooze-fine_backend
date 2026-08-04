@@ -43,7 +43,6 @@ const publicHabit = (habit: Awaited<ReturnType<typeof habitDashboard>>[number]) 
   weekdays: habit.weekdays,
   deadlineMinutes: habit.deadlineMinutes,
   timezone: habit.timezone,
-  penaltyPoints: habit.penaltyPoints,
   activeState: habit.activeState,
   scheduledToday: habit.scheduledToday,
   todayProgress: habit.todayProgress,
@@ -55,8 +54,9 @@ const publicHabit = (habit: Awaited<ReturnType<typeof habitDashboard>>[number]) 
 
 export async function handleHabitApiEvent(
   event: HabitApiEvent,
-  repository: HabitRepository & EarnedPointsRepository,
+  repository: HabitRepository,
   now = new Date().toISOString(),
+  earnedPoints?: EarnedPointsRepository,
 ): Promise<unknown> {
   const userId = cognitoSub(event.identity);
   switch (event.fieldName) {
@@ -86,10 +86,11 @@ export async function handleHabitApiEvent(
       };
     }
     case 'reportHabitProgress': {
+      if (earnedPoints === undefined) throw new DomainError('EARNED_POINTS_UNAVAILABLE');
       const input = habitProgressArgumentsSchema.parse(event.arguments.input);
       const result = await reportHabitProgress(repository, { userId, ...input }, now);
       const earning = result.completed
-        ? await repository.earnPoints(
+        ? await earnedPoints.earnPoints(
             {
               userId,
               qualification: 'HABIT_COMPLETION',
@@ -98,7 +99,7 @@ export async function handleHabitApiEvent(
             },
             now,
           )
-        : await repository.getDisciPointAccount(userId, now).then((account) => ({
+        : await earnedPoints.getDisciPointAccount(userId, now).then((account) => ({
             pointsEarned: 0,
             currentPoints: account.currentPoints,
           }));
@@ -122,5 +123,5 @@ export const handler = async (event: HabitApiEvent): Promise<unknown> => {
     earnedPointsTableNamesFromEnvironment(),
     configuredEnvironment(),
   );
-  return handleHabitApiEvent(event, { ...repository, ...earnedPoints });
+  return handleHabitApiEvent(event, repository, new Date().toISOString(), earnedPoints);
 };

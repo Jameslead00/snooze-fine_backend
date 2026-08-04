@@ -13,7 +13,6 @@ export interface HabitEnforcementSummary {
   occurrencesChecked: number;
   newlyMissed: number;
   skippedIneligible: number;
-  pointsDeducted: number;
 }
 
 export async function enforceDueHabits(
@@ -26,7 +25,6 @@ export async function enforceDueHabits(
     occurrencesChecked: 0,
     newlyMissed: 0,
     skippedIneligible: 0,
-    pointsDeducted: 0,
   };
   for (const habit of habits) {
     for (const localDate of dueLocalDates(habit, now)) {
@@ -36,7 +34,6 @@ export async function enforceDueHabits(
       if (!result.duplicate && result.status === 'SKIPPED_INELIGIBLE') {
         summary.skippedIneligible += 1;
       }
-      if (!result.duplicate) summary.pointsDeducted += result.pointsDeducted;
     }
   }
   return summary;

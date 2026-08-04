@@ -2,8 +2,6 @@ import { type ClientSchema, a, defineData } from '@aws-amplify/backend';
 import { accountApiFunction } from '../functions/account-api/resource.js';
 import { habitApiFunction } from '../functions/habit-api/resource.js';
 import { linkRevenueCatCustomerFunction } from '../functions/link-revenuecat-customer/resource.js';
-import { monthlySettlementFunction } from '../functions/monthly-settlement/resource.js';
-import { recordSnoozeFunction } from '../functions/record-snooze/resource.js';
 import { requestAccountDeletionFunction } from '../functions/request-account-deletion/resource.js';
 
 const schema = a.schema({
@@ -86,70 +84,8 @@ const schema = a.schema({
     ])
     .authorization((allow) => [allow.group('ADMINS').to(['read'])]),
 
-  PointPeriod: a
-    .model({
-      id: a.id().required(),
-      userId: a.id().required(),
-      entitlementId: a.string().required(),
-      productId: a.string().required(),
-      periodStart: a.datetime().required(),
-      periodEnd: a.datetime().required(),
-      environment: a.enum(['SANDBOX', 'PRODUCTION']),
-      initialAllocation: a.integer().required(),
-      currentRemaining: a.integer().required(),
-      status: a.enum(['ACTIVE', 'EXPIRED']),
-      allocationTransactionId: a.string().required(),
-    })
-    .secondaryIndexes((index) => [
-      index('userId').sortKeys(['periodStart']).name('byUserAndPeriodStart'),
-      index('environment').sortKeys(['periodEnd']).name('byEnvironmentAndPeriodEnd'),
-    ])
-    .authorization((allow) => [allow.group('ADMINS').to(['read'])]),
-
-  PointAccount: a
-    .model({
-      id: a.id().required(),
-      userId: a.id().required(),
-      environment: a.enum(['SANDBOX', 'PRODUCTION']),
-      currentBalance: a.integer().required(),
-      activePeriodId: a.id(),
-      lifetimeAllocated: a.integer().required(),
-      lifetimeDeducted: a.integer().required(),
-      version: a.integer().required(),
-    })
-    .authorization((allow) => [allow.group('ADMINS').to(['read'])]),
-
-  PointTransaction: a
-    .model({
-      id: a.id().required(),
-      userId: a.id().required(),
-      environment: a.enum(['SANDBOX', 'PRODUCTION']),
-      userEnvironment: a.string().required(),
-      pointPeriodId: a.id().required(),
-      amount: a.integer().required(),
-      transactionType: a.enum([
-        'MONTHLY_ALLOCATION',
-        'SNOOZE_DEDUCTION',
-        'HABIT_DEDUCTION',
-        'ADMIN_ADJUSTMENT',
-      ]),
-      reasonCode: a.string().required(),
-      source: a.enum(['REVENUECAT_WEBHOOK', 'IOS_APP', 'ACCOUNTABILITY_ENGINE', 'ADMIN']),
-      idempotencyKey: a.string().required(),
-      sourceEventId: a.string().required(),
-      relatedEventId: a.string(),
-      balanceAfter: a.integer().required(),
-      createdAt: a.datetime().required(),
-      metadataJson: a.json(),
-    })
-    .secondaryIndexes((index) => [
-      index('userEnvironment').sortKeys(['createdAt']).name('byUserEnvironmentAndCreatedAt'),
-    ])
-    .authorization((allow) => [allow.group('ADMINS').to(['read'])]),
-
-  // The earned-points ledger is the App Store-safe successor to the legacy
-  // subscription allocation and deduction records above. It has no monetary
-  // fields and only records positive, idempotent qualification events.
+  // The earned-points ledger has no monetary fields and records only positive,
+  // idempotent qualification events.
   DisciPointAccount: a
     .model({
       id: a.id().required(),
@@ -184,26 +120,6 @@ const schema = a.schema({
     ])
     .authorization((allow) => [allow.group('ADMINS').to(['read'])]),
 
-  SnoozeEvent: a
-    .model({
-      id: a.id().required(),
-      userId: a.id().required(),
-      environment: a.enum(['SANDBOX', 'PRODUCTION']),
-      alarmId: a.string().required(),
-      alarmOccurrenceId: a.string().required(),
-      occurredAt: a.datetime().required(),
-      receivedAt: a.datetime().required(),
-      status: a.enum(['ACCEPTED', 'REJECTED']),
-      ledgerTransactionId: a.string(),
-      pointsDeducted: a.integer().required(),
-      officialBalance: a.integer().required(),
-      clientAppVersion: a.string(),
-      legacyPurchaseReference: a.string(),
-    })
-    .secondaryIndexes((index) => [
-      index('userId').sortKeys(['receivedAt']).name('byUserAndReceivedAt'),
-    ])
-    .authorization((allow) => [allow.group('ADMINS').to(['read'])]),
 
   SyncedAlarm: a
     .model({
@@ -289,7 +205,6 @@ const schema = a.schema({
       weekdays: a.integer().array().required(),
       deadlineMinutes: a.integer().required(),
       timezone: a.string().required(),
-      penaltyPoints: a.integer().required(),
       startDate: a.date().required(),
       activeState: a.enum(['ACTIVE', 'ARCHIVED']),
       version: a.integer().required(),
@@ -317,9 +232,6 @@ const schema = a.schema({
       status: a.enum(['PENDING', 'COMPLETED', 'MISSED', 'SKIPPED_INELIGIBLE']),
       completedAt: a.datetime(),
       missedAt: a.datetime(),
-      ledgerTransactionId: a.string(),
-      pointsDeducted: a.integer().required(),
-      officialBalance: a.integer().required(),
       version: a.integer().required(),
       createdAt: a.datetime().required(),
       updatedAt: a.datetime().required(),
@@ -343,31 +255,6 @@ const schema = a.schema({
     })
     .secondaryIndexes((index) => [
       index('userId').sortKeys(['createdAt']).name('byUserAndCreatedAt'),
-    ])
-    .authorization((allow) => [allow.group('ADMINS').to(['read'])]),
-
-  MonthlySettlement: a
-    .model({
-      id: a.id().required(),
-      calendarMonth: a.string().required(),
-      environment: a.enum(['SANDBOX', 'PRODUCTION']),
-      mode: a.enum(['TEST']),
-      eligibleUserCount: a.integer().required(),
-      totalAllocatedPoints: a.integer().required(),
-      totalDeductedPoints: a.integer().required(),
-      totalRemainingPoints: a.integer().required(),
-      donationRateMicroUsdPerPoint: a.integer().required(),
-      expectedDonationMicroUsd: a.string().required(),
-      expectedDonationDisplay: a.string().required(),
-      calculationVersion: a.string().required(),
-      cutoffAt: a.datetime().required(),
-      status: a.enum(['CALCULATING', 'CALCULATED', 'FAILED', 'VOID']),
-      completedAt: a.datetime(),
-      errorSummary: a.string(),
-      calculationMetadata: a.json(),
-    })
-    .secondaryIndexes((index) => [
-      index('environment').sortKeys(['calendarMonth']).name('byEnvironmentAndMonth'),
     ])
     .authorization((allow) => [allow.group('ADMINS').to(['read'])]),
 
@@ -401,7 +288,6 @@ const schema = a.schema({
       tallies: a.json().required(),
       totalVotes: a.integer().required(),
       winnerCharityId: a.id(),
-      donationRecordId: a.id(),
       companyContributionId: a.id(),
       totalAllocatedPoints: a.integer(),
       version: a.integer().required(),
@@ -409,23 +295,6 @@ const schema = a.schema({
     })
     .secondaryIndexes((index) => [
       index('environmentStatus').sortKeys(['closesAt']).name('byEnvironmentStatusAndClosesAt'),
-    ])
-    .authorization((allow) => [allow.group('ADMINS').to(['read'])]),
-
-  DailyCharityVote: a
-    .model({
-      id: a.id().required(),
-      userId: a.id().required(),
-      environment: a.enum(['SANDBOX', 'PRODUCTION']),
-      ballotId: a.id().required(),
-      charityId: a.id().required(),
-      localVoteDate: a.date().required(),
-      timezone: a.string().required(),
-      createdAt: a.datetime().required(),
-    })
-    .secondaryIndexes((index) => [
-      index('ballotId').sortKeys(['createdAt']).name('byBallotAndCreatedAt'),
-      index('userId').sortKeys(['createdAt']).name('byUserAndCreatedAt'),
     ])
     .authorization((allow) => [allow.group('ADMINS').to(['read'])]),
 
@@ -471,25 +340,6 @@ const schema = a.schema({
     ])
     .authorization((allow) => [allow.group('ADMINS').to(['read'])]),
 
-  DonationRecord: a
-    .model({
-      id: a.id().required(),
-      month: a.string().required(),
-      environment: a.enum(['SANDBOX', 'PRODUCTION']),
-      charityId: a.id().required(),
-      status: a.enum(['EXPECTED', 'APPROVED', 'PAID', 'EVIDENCED', 'VOID']),
-      expectedDonationMicroUsd: a.string().required(),
-      approvedDonationMicroUsd: a.string(),
-      paidDonationMicroUsd: a.string(),
-      paidAt: a.datetime(),
-      evidenceUrl: a.url(),
-      ownerNote: a.string(),
-      updatedAt: a.datetime().required(),
-    })
-    .secondaryIndexes((index) => [
-      index('environment').sortKeys(['month']).name('byEnvironmentAndMonth'),
-    ])
-    .authorization((allow) => [allow.group('ADMINS').to(['read'])]),
 
   AccountDeletionRequest: a
     .model({
@@ -507,32 +357,6 @@ const schema = a.schema({
     ])
     .authorization((allow) => [allow.group('ADMINS').to(['read', 'update'])]),
 
-  RecordSnoozeInput: a.customType({
-    alarmId: a.string().required(),
-    alarmOccurrenceId: a.string().required(),
-    snoozeEventId: a.id().required(),
-    occurredAt: a.datetime().required(),
-    legacyPurchaseReference: a.string(),
-    clientAppVersion: a.string(),
-  }),
-  RecordSnoozeResult: a.customType({
-    accepted: a.boolean().required(),
-    duplicate: a.boolean().required(),
-    snoozeCount: a.integer().required(),
-    serverTimestamp: a.datetime().required(),
-  }),
-  PointAccountResult: a.customType({
-    isEligible: a.boolean().required(),
-    officialBalance: a.integer().required(),
-    activePointPeriodId: a.id(),
-    initialAllocation: a.integer().required(),
-    pointsDeducted: a.integer().required(),
-    periodStart: a.datetime(),
-    periodEnd: a.datetime(),
-    subscriptionStatus: a.string().required(),
-    donationMicroUsd: a.string().required(),
-    serverTimestamp: a.datetime().required(),
-  }),
   EarnedPointAccountResult: a.customType({
     isEligible: a.boolean().required(),
     earnedPointsTotal: a.integer().required(),
@@ -558,32 +382,9 @@ const schema = a.schema({
     items: a.ref('PointAwardResult').array().required(),
     nextToken: a.string(),
   }),
-  PointTransactionResult: a.customType({
-    id: a.id().required(),
-    pointPeriodId: a.id().required(),
-    amount: a.integer().required(),
-    transactionType: a.string().required(),
-    reasonCode: a.string().required(),
-    source: a.string().required(),
-    sourceEventId: a.string().required(),
-    relatedEventId: a.string(),
-    balanceAfter: a.integer().required(),
-    createdAt: a.datetime().required(),
-  }),
-  PointTransactionPage: a.customType({
-    items: a.ref('PointTransactionResult').array().required(),
-    nextToken: a.string(),
-  }),
   LinkRevenueCatResult: a.customType({
     linked: a.boolean().required(),
     duplicate: a.boolean().required(),
-  }),
-  SettlementResult: a.customType({
-    duplicate: a.boolean().required(),
-    eligibleUserCount: a.integer().required(),
-    totalRemainingPoints: a.integer().required(),
-    expectedDonationMicroUsd: a.string().required(),
-    warning: a.string().required(),
   }),
   SaveHabitInput: a.customType({
     habitId: a.id().required(),
@@ -606,7 +407,6 @@ const schema = a.schema({
     weekdays: a.integer().array().required(),
     deadlineMinutes: a.integer().required(),
     timezone: a.string().required(),
-    penaltyPoints: a.integer().required(),
     activeState: a.string().required(),
     scheduledToday: a.boolean().required(),
     todayProgress: a.integer().required(),
@@ -634,7 +434,6 @@ const schema = a.schema({
     progressValue: a.integer().required(),
     targetValue: a.integer().required(),
     status: a.string().required(),
-    officialBalance: a.integer().required(),
     pointsAwarded: a.integer().required(),
     earnedPointsTotal: a.integer().required(),
     serverTimestamp: a.datetime().required(),
@@ -738,18 +537,12 @@ const schema = a.schema({
     closesAt: a.datetime(),
     charities: a.ref('CommunityCharityResult').array().required(),
     totalVotes: a.integer().required(),
-    myVoteCharityId: a.id(),
-    canVoteToday: a.boolean().required(),
     earnedVotes: a.integer().required(),
     allocatedVotes: a.integer().required(),
     availableVotes: a.integer().required(),
     canAllocateVotes: a.boolean().required(),
     contributionStatus: a.string(),
     winnerCharityId: a.id(),
-    donationStatus: a.string(),
-    projectedDonationMicroUsd: a.string(),
-    expectedDonationMicroUsd: a.string(),
-    paidDonationMicroUsd: a.string(),
     evidenceUrl: a.url(),
     serverTimestamp: a.datetime().required(),
   }),
@@ -794,13 +587,6 @@ const schema = a.schema({
     serverTimestamp: a.datetime().required(),
   }),
 
-  recordSnooze: a
-    .mutation()
-    .arguments({ input: a.ref('RecordSnoozeInput').required() })
-    .returns(a.ref('RecordSnoozeResult'))
-    .authorization((allow) => [allow.authenticated()])
-    .handler(a.handler.function(recordSnoozeFunction)),
-
   linkRevenueCatCustomer: a
     .mutation()
     .arguments({
@@ -813,22 +599,9 @@ const schema = a.schema({
     .authorization((allow) => [allow.authenticated()])
     .handler(a.handler.function(linkRevenueCatCustomerFunction)),
 
-  getMyPointAccount: a
-    .query()
-    .returns(a.ref('PointAccountResult'))
-    .authorization((allow) => [allow.authenticated()])
-    .handler(a.handler.function(accountApiFunction)),
-
   getMyEarnedPointAccount: a
     .query()
     .returns(a.ref('EarnedPointAccountResult'))
-    .authorization((allow) => [allow.authenticated()])
-    .handler(a.handler.function(accountApiFunction)),
-
-  listMyPointTransactions: a
-    .query()
-    .arguments({ limit: a.integer(), nextToken: a.string() })
-    .returns(a.ref('PointTransactionPage'))
     .authorization((allow) => [allow.authenticated()])
     .handler(a.handler.function(accountApiFunction)),
 
@@ -911,13 +684,6 @@ const schema = a.schema({
     .authorization((allow) => [allow.authenticated()])
     .handler(a.handler.function(accountApiFunction)),
 
-  castMyDailyCharityVote: a
-    .mutation()
-    .arguments({ charityId: a.id().required() })
-    .returns(a.ref('CommunityVoteResult'))
-    .authorization((allow) => [allow.authenticated()])
-    .handler(a.handler.function(accountApiFunction)),
-
   allocateMyCharityVotes: a
     .mutation()
     .arguments({ input: a.ref('AllocateCharityVotesInput').required() })
@@ -939,16 +705,6 @@ const schema = a.schema({
     .authorization((allow) => [allow.authenticated()])
     .handler(a.handler.function(requestAccountDeletionFunction)),
 
-  rerunMonthlySettlement: a
-    .mutation()
-    .arguments({
-      month: a.string().required(),
-      environment: a.enum(['SANDBOX', 'PRODUCTION']),
-      cutoff: a.datetime().required(),
-    })
-    .returns(a.ref('SettlementResult'))
-    .authorization((allow) => [allow.group('ADMINS')])
-    .handler(a.handler.function(monthlySettlementFunction)),
 });
 
 export type Schema = ClientSchema<typeof schema>;

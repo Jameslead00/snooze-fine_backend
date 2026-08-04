@@ -1,19 +1,10 @@
 export const PLATFORM_CONFIG = {
   entitlementId: 'snoozefine_plus',
   monthlyProductId: 'snoozefine_plus_monthly',
-  legacySnoozeProductId: 'snooze_1',
-  monthlyPointAllocation: 2_000,
-  snoozePointDeduction: 25,
-  habitMissPointDeduction: 25,
   habitSettlementLookbackDays: 35,
-  microUsdPerPoint: 1_000,
-  settlementMode: 'TEST',
-  settlementCalculationVersion: 'v1',
   wakeCompletionPointEarned: 25,
   habitCompletionPointEarned: 10,
   webhookMaxPayloadBytes: 256 * 1024,
-  snoozeFutureToleranceMs: 5 * 60 * 1_000,
-  snoozeMaxAgeMs: 7 * 24 * 60 * 60 * 1_000,
 } as const;
 
 export type RevenueCatEnvironment = 'SANDBOX' | 'PRODUCTION';

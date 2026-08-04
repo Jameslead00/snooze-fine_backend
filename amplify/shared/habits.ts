@@ -1,4 +1,3 @@
-import { PLATFORM_CONFIG } from './config.js';
 import { DomainError } from './domain.js';
 import type { HabitRepository } from './habit-repository.js';
 import type {
@@ -114,12 +113,7 @@ export function isScheduled(habit: HabitDefinition, localDate: string): boolean 
   return habit.weekdays.includes(localParts(midday, habit.timezone).weekday);
 }
 
-export function occurrenceFor(
-  habit: HabitDefinition,
-  localDate: string,
-  balance: number,
-  now: string,
-): HabitOccurrence {
+export function occurrenceFor(habit: HabitDefinition, localDate: string, now: string): HabitOccurrence {
   return {
     id: sha256(`habit-occurrence:${habit.userId}:${habit.id}:${localDate}`),
     userId: habit.userId,
@@ -134,9 +128,6 @@ export function occurrenceFor(
     status: 'PENDING',
     completedAt: undefined,
     missedAt: undefined,
-    ledgerTransactionId: undefined,
-    pointsDeducted: 0,
-    officialBalance: balance,
     version: 1,
     createdAt: now,
     updatedAt: now,
@@ -190,7 +181,6 @@ export async function saveHabit(
   return repository.saveHabit(
     { ...command, title: command.title.trim(), weekdays: [...command.weekdays].sort() },
     startDate,
-    PLATFORM_CONFIG.habitMissPointDeduction,
     now,
   );
 }
@@ -279,8 +269,7 @@ export async function reportHabitProgress(
   }
   const localDate = localParts(command.occurredAt, habit.timezone).date;
   if (!isScheduled(habit, localDate)) throw new DomainError('HABIT_NOT_SCHEDULED');
-  const balance = await repository.officialBalance(command.userId);
-  const occurrence = occurrenceFor(habit, localDate, balance, now);
+  const occurrence = occurrenceFor(habit, localDate, now);
   if (Date.parse(now) > Date.parse(occurrence.dueAt))
     throw new DomainError('HABIT_DEADLINE_PASSED');
   return repository.recordHabitProgress({ command, habit, occurrence, now });
@@ -289,7 +278,7 @@ export async function reportHabitProgress(
 export function dueLocalDates(
   habit: HabitDefinition,
   now: string,
-  lookbackDays = PLATFORM_CONFIG.habitSettlementLookbackDays,
+  lookbackDays = 35,
 ): string[] {
   const dates: string[] = [];
   const nowMs = Date.parse(now);
@@ -314,8 +303,7 @@ export async function settleHabit(
   now = new Date().toISOString(),
 ): Promise<HabitSettlementResult> {
   if (!isScheduled(habit, localDate)) throw new DomainError('HABIT_NOT_SCHEDULED');
-  const balance = await repository.officialBalance(habit.userId);
-  const occurrence = occurrenceFor(habit, localDate, balance, now);
+  const occurrence = occurrenceFor(habit, localDate, now);
   if (Date.parse(occurrence.dueAt) > Date.parse(now)) throw new DomainError('HABIT_NOT_DUE');
   return repository.settleMissedHabit({ habit, occurrence, now });
 }

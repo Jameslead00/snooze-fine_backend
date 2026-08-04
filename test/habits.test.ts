@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import { PLATFORM_CONFIG } from '../amplify/shared/config.js';
 import { DomainError } from '../amplify/shared/domain.js';
 import {
   archiveHabit,
@@ -36,10 +35,9 @@ async function waterHabit(repository: InMemoryHabitRepository) {
 }
 
 describe('Phase 2 habit accountability', () => {
-  it('assigns the provisional penalty on the server', async () => {
+  it('creates a habit without a penalty field', async () => {
     const repository = new InMemoryHabitRepository();
     const habit = await waterHabit(repository);
-    expect(habit.penaltyPoints).toBe(PLATFORM_CONFIG.habitMissPointDeduction);
     expect(habit.startDate).toBe('2026-07-31');
   });
 
@@ -55,7 +53,6 @@ describe('Phase 2 habit accountability', () => {
   it('reuses a progress event without double counting', async () => {
     const repository = new InMemoryHabitRepository();
     await waterHabit(repository);
-    repository.balances.set(userId, 2_000);
     const command = {
       userId,
       habitId,
@@ -73,7 +70,6 @@ describe('Phase 2 habit accountability', () => {
   it('completes at the target and exposes today from server occurrences', async () => {
     const repository = new InMemoryHabitRepository();
     await waterHabit(repository);
-    repository.balances.set(userId, 2_000);
     const result = await reportHabitProgress(
       repository,
       {
@@ -109,26 +105,20 @@ describe('Phase 2 habit accountability', () => {
     ).rejects.toBeInstanceOf(DomainError);
   });
 
-  it('deducts once for a missed habit and returns the official balance', async () => {
+  it('records a missed habit without deducting earned points', async () => {
     const repository = new InMemoryHabitRepository();
     const habit = await waterHabit(repository);
-    repository.balances.set(userId, 2_000);
     const first = await settleHabit(repository, habit, '2026-07-31', '2026-07-31T20:01:00.000Z');
     const retry = await settleHabit(repository, habit, '2026-07-31', '2026-07-31T20:02:00.000Z');
-    expect(first).toMatchObject({ status: 'MISSED', pointsDeducted: 25, officialBalance: 1_975 });
+    expect(first).toMatchObject({ status: 'MISSED' });
     expect(retry.duplicate).toBe(true);
-    expect(retry.officialBalance).toBe(1_975);
-    expect(repository.deductions).toHaveLength(1);
   });
 
-  it('does not charge an ineligible account', async () => {
+  it('records missed habits independently of subscription eligibility', async () => {
     const repository = new InMemoryHabitRepository();
     const habit = await waterHabit(repository);
-    repository.balances.set(userId, 2_000);
-    repository.eligible = false;
     const result = await settleHabit(repository, habit, '2026-07-31', '2026-07-31T20:01:00.000Z');
-    expect(result).toMatchObject({ status: 'SKIPPED_INELIGIBLE', pointsDeducted: 0 });
-    expect(repository.balances.get(userId)).toBe(2_000);
+    expect(result).toMatchObject({ status: 'MISSED' });
   });
 
   it('uses timezone-aware deadlines and returns only due scheduled dates', async () => {

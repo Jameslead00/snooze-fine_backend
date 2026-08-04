@@ -7,13 +7,6 @@
     "node": ">=20 <23"
   },
   "scripts": {
-    "admin:adjust": "tsx scripts/admin.ts adjust",
-    "admin:engagement": "tsx scripts/admin.ts engagement",
-    "admin:ledger": "tsx scripts/admin.ts ledger",
-    "admin:settlement": "tsx scripts/admin.ts settlement",
-    "admin:summary": "tsx scripts/admin.ts summary",
-    "admin:unresolved-webhooks": "tsx scripts/admin.ts unresolved-webhooks",
-    "seed:community": "tsx scripts/seed-community-fixture.ts",
     "deploy": "ampx pipeline-deploy",
     "deploy:staging": "ampx pipeline-deploy --branch staging --app-id \"$AMPLIFY_APP_ID\"",
     "format": "prettier --write .",
@@ -22,7 +15,6 @@
     "outputs": "ampx generate outputs --out-dir .",
     "outputs:staging": "ampx generate outputs --app-id \"$AMPLIFY_APP_ID\" --branch staging --out-dir .",
     "sandbox": "ampx sandbox",
-    "seed": "tsx scripts/seed.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit"

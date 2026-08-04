@@ -19,7 +19,6 @@ export interface HabitDefinition {
   weekdays: number[];
   deadlineMinutes: number;
   timezone: string;
-  penaltyPoints: number;
   startDate: string;
   activeState: 'ACTIVE' | 'ARCHIVED';
   version: number;
@@ -41,9 +40,6 @@ export interface HabitOccurrence {
   status: HabitOccurrenceStatus;
   completedAt: string | undefined;
   missedAt: string | undefined;
-  ledgerTransactionId: string | undefined;
-  pointsDeducted: number;
-  officialBalance: number;
   version: number;
   createdAt: string;
   updatedAt: string;
@@ -78,15 +74,12 @@ export interface HabitProgressResult {
   progressValue: number;
   targetValue: number;
   status: HabitOccurrenceStatus;
-  officialBalance: number;
   serverTimestamp: string;
 }
 
 export interface HabitSettlementResult {
   duplicate: boolean;
   status: HabitOccurrenceStatus;
-  pointsDeducted: number;
-  officialBalance: number;
 }
 
 export interface HabitView extends HabitDefinition {

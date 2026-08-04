@@ -71,8 +71,8 @@ describe('community point allocation', () => {
     const first = await subject.allocatePoints('cognito-user', 'charity-a', '2026-07-31T20:00:00.000Z');
     const retry = await subject.allocatePoints('cognito-user', 'charity-a', '2026-07-31T20:30:00.000Z');
 
-    expect(first).toMatchObject({ duplicate: false, pointsAllocated: 25, newlyAllocatedPoints: 25 });
-    expect(retry).toMatchObject({ duplicate: true, newlyAllocatedPoints: 0 });
+    expect(first).toMatchObject({ duplicate: false, allocatedVotes: 25, charityAllocatedVotes: 25 });
+    expect(retry).toMatchObject({ duplicate: true, availableVotes: 0 });
     expect(client.currentPoints).toBe(25);
     expect(client.ballot.totalAllocatedPoints).toBe(25);
   });
@@ -84,7 +84,7 @@ describe('community point allocation', () => {
     client.currentPoints = 40;
     const next = await subject.allocatePoints('cognito-user', 'charity-a', '2026-07-31T20:30:00.000Z');
 
-    expect(next).toMatchObject({ pointsAllocated: 40, newlyAllocatedPoints: 15 });
+    expect(next).toMatchObject({ allocatedVotes: 40, charityAllocatedVotes: 40 });
     expect(client.currentPoints).toBe(40);
   });
 

@@ -11,10 +11,6 @@ import {
   engagementTableNameFromEnvironment,
 } from '../../shared/dynamo-engagement-repository.js';
 import {
-  DynamoPlatformRepository,
-  tableNamesFromEnvironment,
-} from '../../shared/dynamo-repository.js';
-import {
   DynamoEarnedPointsRepository,
   earnedPointsTableNamesFromEnvironment,
 } from '../../shared/dynamo-earned-points-repository.js';
@@ -31,7 +27,6 @@ import {
   DynamoSyncRepository,
   syncTableNamesFromEnvironment,
 } from '../../shared/dynamo-sync-repository.js';
-import type { PlatformRepository } from '../../shared/repository.js';
 import type { SyncRepository } from '../../shared/sync-repository.js';
 import {
   archiveSyncedAlarmArgumentsSchema,
@@ -57,11 +52,7 @@ export type AccountApiEvent = {
   prev?: unknown;
 };
 
-export type AccountApiRepository = Pick<
-  PlatformRepository,
-  'getPointAccountView' | 'listPointTransactions'
-> &
-  EarnedPointsRepository &
+export type AccountApiRepository = EarnedPointsRepository &
   SyncRepository &
   CommunityRepository &
   EngagementRepository & {
@@ -74,10 +65,6 @@ export async function handleAccountApiEvent(
   now = new Date().toISOString(),
 ): Promise<unknown> {
   const userId = cognitoSub(event.identity);
-  if (event.fieldName === 'getMyPointAccount') {
-    const view = await repository.getPointAccountView(userId, now);
-    return { ...view, donationMicroUsd: String(view.donationMicroUsd) };
-  }
   if (event.fieldName === 'getMyEarnedPointAccount') {
     const account = await repository.getDisciPointAccount(userId, now);
     return {
@@ -88,29 +75,6 @@ export async function handleAccountApiEvent(
       activeBallotAllocatedVotes: 0,
       subscriptionStatus: 'ACTIVE',
       serverTimestamp: now,
-    };
-  }
-  if (event.fieldName === 'listMyPointTransactions') {
-    const arguments_ = listTransactionsArgumentsSchema.parse(event.arguments);
-    const page = await repository.listPointTransactions(
-      userId,
-      arguments_.limit ?? 50,
-      arguments_.nextToken,
-    );
-    return {
-      items: page.items.map((transaction) => ({
-        id: transaction.id,
-        pointPeriodId: transaction.pointPeriodId,
-        amount: transaction.amount,
-        transactionType: transaction.transactionType,
-        reasonCode: transaction.reasonCode,
-        source: transaction.source,
-        sourceEventId: transaction.sourceEventId,
-        relatedEventId: transaction.relatedEventId,
-        balanceAfter: transaction.balanceAfter,
-        createdAt: transaction.createdAt,
-      })),
-      nextToken: page.nextToken,
     };
   }
   if (event.fieldName === 'listMyPointAwards') {
@@ -156,7 +120,15 @@ export async function handleAccountApiEvent(
     };
   }
   if (event.fieldName === 'getMyAccountabilityStatistics') {
-    return repository.statistics(userId, now);
+    const [statistics, account] = await Promise.all([
+      repository.statistics(userId, now),
+      repository.getDisciPointAccount(userId, now),
+    ]);
+    return {
+      ...statistics,
+      earnedPointsTotal: account.currentPoints,
+      activeBallotEarnedPoints: 0,
+    };
   }
   if (event.fieldName === 'getMyWeeklyProgressRecap') {
     return repository.weeklyProgressRecap(userId, now);
@@ -195,10 +167,6 @@ export async function handleAccountApiEvent(
 }
 
 export const handler = async (event: AccountApiEvent): Promise<unknown> => {
-  const platform = new DynamoPlatformRepository(
-    tableNamesFromEnvironment(),
-    configuredEnvironment(),
-  );
   const earnedPoints = new DynamoEarnedPointsRepository(
     earnedPointsTableNamesFromEnvironment(),
     configuredEnvironment(),
@@ -217,13 +185,10 @@ export const handler = async (event: AccountApiEvent): Promise<unknown> => {
     configuredEnvironment(),
   );
   const repository: AccountApiRepository = {
-    getPointAccountView: (userId, now) => platform.getPointAccountView(userId, now),
     getDisciPointAccount: (userId, now) => earnedPoints.getDisciPointAccount(userId, now),
     earnPoints: (command, now) => earnedPoints.earnPoints(command, now),
     listPointAwards: (userId, limit, nextToken) =>
       earnedPoints.listPointAwards(userId, limit, nextToken),
-    listPointTransactions: (userId, limit, nextToken) =>
-      platform.listPointTransactions(userId, limit, nextToken),
     listAlarms: (userId) => sync.listAlarms(userId),
     saveAlarm: (command, now) => sync.saveAlarm(command, now),
     archiveAlarm: (userId, alarmId, expectedVersion, now) =>

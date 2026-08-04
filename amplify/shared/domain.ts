@@ -1,16 +1,8 @@
-import { PLATFORM_CONFIG, type RevenueCatEnvironment } from './config.js';
-import { expectedDonationMicroUsd, formatMicroUsd } from './money.js';
-import type { AllocationWrite, PlatformRepository } from './repository.js';
-import { sha256 } from './security.js';
+import { PLATFORM_CONFIG } from './config.js';
+import type { PlatformRepository } from './repository.js';
 import type {
-  PointPeriod,
-  PointTransaction,
   RevenueCatEvent,
   RevenueCatProcessingResult,
-  SettlementCalculation,
-  SettlementCandidate,
-  SnoozeCommand,
-  SnoozeResult,
   SubscriptionState,
   SubscriptionStatus,
   WebhookRecord,
@@ -56,16 +48,6 @@ function statusForEvent(event: RevenueCatEvent, now: string): SubscriptionStatus
   }
 }
 
-function canAllocate(event: RevenueCatEvent): boolean {
-  return (
-    (event.type === 'INITIAL_PURCHASE' || event.type === 'RENEWAL') &&
-    event.productId === PLATFORM_CONFIG.monthlyProductId &&
-    event.entitlementIds.includes(PLATFORM_CONFIG.entitlementId) &&
-    event.purchasedAt !== undefined &&
-    event.expiresAt !== undefined
-  );
-}
-
 function buildSubscription(
   event: RevenueCatEvent,
   userId: string,
@@ -101,52 +83,6 @@ function buildSubscription(
   };
 }
 
-function buildAllocation(
-  event: RevenueCatEvent,
-  userId: string,
-  now: string,
-): AllocationWrite | undefined {
-  if (!canAllocate(event) || event.purchasedAt === undefined || event.expiresAt === undefined) {
-    return undefined;
-  }
-  const idempotencyKey = `subscription-allocation:${userId}:${PLATFORM_CONFIG.entitlementId}:${event.purchasedAt}`;
-  const periodId = sha256(idempotencyKey);
-  const transactionId = sha256(`transaction:${idempotencyKey}`);
-  const period: PointPeriod = {
-    id: periodId,
-    userId,
-    entitlementId: PLATFORM_CONFIG.entitlementId,
-    productId: PLATFORM_CONFIG.monthlyProductId,
-    periodStart: event.purchasedAt,
-    periodEnd: event.expiresAt,
-    environment: event.environment,
-    initialAllocation: PLATFORM_CONFIG.monthlyPointAllocation,
-    currentRemaining: PLATFORM_CONFIG.monthlyPointAllocation,
-    status: 'ACTIVE',
-    allocationTransactionId: transactionId,
-    createdAt: now,
-    updatedAt: now,
-  };
-  const transaction: PointTransaction = {
-    id: transactionId,
-    userId,
-    environment: event.environment,
-    userEnvironment: `${userId}:${event.environment}`,
-    pointPeriodId: periodId,
-    amount: PLATFORM_CONFIG.monthlyPointAllocation,
-    transactionType: 'MONTHLY_ALLOCATION',
-    reasonCode: 'ELIGIBLE_MONTHLY_SUBSCRIPTION_PERIOD',
-    source: 'REVENUECAT_WEBHOOK',
-    idempotencyKey,
-    sourceEventId: event.id,
-    relatedEventId: undefined,
-    balanceAfter: PLATFORM_CONFIG.monthlyPointAllocation,
-    createdAt: now,
-    metadataJson: JSON.stringify({ environment: event.environment }),
-  };
-  return { period, transaction };
-}
-
 export async function processRevenueCatEvent(
   repository: PlatformRepository,
   event: RevenueCatEvent,
@@ -179,108 +115,7 @@ export async function processRevenueCatEvent(
     webhook,
     subscription:
       userId === undefined || !known ? undefined : buildSubscription(event, userId, now),
-    allocation: userId === undefined || !known ? undefined : buildAllocation(event, userId, now),
   });
-}
-
-export async function recordSnooze(
-  repository: PlatformRepository,
-  command: SnoozeCommand,
-  now = new Date().toISOString(),
-): Promise<SnoozeResult> {
-  const occurredAt = Date.parse(command.occurredAt);
-  const serverTime = Date.parse(now);
-  if (!Number.isFinite(occurredAt)) throw new DomainError('INVALID_TIMESTAMP');
-  if (occurredAt > serverTime + PLATFORM_CONFIG.snoozeFutureToleranceMs) {
-    throw new DomainError('FUTURE_EVENT');
-  }
-  if (occurredAt < serverTime - PLATFORM_CONFIG.snoozeMaxAgeMs) {
-    throw new DomainError('STALE_EVENT');
-  }
-  return repository.recordSnooze(command, now);
-}
-
-export function previousUtcMonth(reference = new Date()): {
-  month: string;
-  cutoff: string;
-} {
-  const startOfCurrentMonth = new Date(
-    Date.UTC(reference.getUTCFullYear(), reference.getUTCMonth(), 1),
-  );
-  const previous = new Date(Date.UTC(reference.getUTCFullYear(), reference.getUTCMonth() - 1, 1));
-  return {
-    month: `${previous.getUTCFullYear()}-${(previous.getUTCMonth() + 1).toString().padStart(2, '0')}`,
-    cutoff: new Date(startOfCurrentMonth.getTime() - 1).toISOString(),
-  };
-}
-
-export function calculateSettlement(
-  candidates: SettlementCandidate[],
-  environment: RevenueCatEnvironment,
-  cutoff: string,
-): SettlementCalculation {
-  const eligibleStatuses: SubscriptionStatus[] = [
-    'ACTIVE',
-    'GRACE_PERIOD',
-    'BILLING_ISSUE',
-    'CANCELLED_PENDING_EXPIRY',
-  ];
-  const byUser = new Map<string, SettlementCandidate>();
-  for (const candidate of candidates) {
-    if (
-      !candidate.resolved ||
-      candidate.environment !== environment ||
-      (!eligibleStatuses.includes(candidate.subscriptionStatus) &&
-        !(
-          candidate.subscriptionStatus === 'EXPIRED' &&
-          candidate.subscriptionStatusEffectiveAt > cutoff
-        )) ||
-      candidate.periodStart > cutoff ||
-      candidate.periodEnd <= cutoff
-    ) {
-      continue;
-    }
-    const previous = byUser.get(candidate.userId);
-    if (previous === undefined || candidate.periodStart > previous.periodStart) {
-      byUser.set(candidate.userId, candidate);
-    }
-  }
-  let allocated = 0;
-  let remaining = 0;
-  for (const candidate of byUser.values()) {
-    allocated += Math.max(0, candidate.allocated);
-    remaining += Math.max(0, Math.min(candidate.allocated, candidate.remaining));
-  }
-  return {
-    eligibleUserCount: byUser.size,
-    totalAllocatedPoints: allocated,
-    totalDeductedPoints: allocated - remaining,
-    totalRemainingPoints: remaining,
-    expectedDonationMicroUsd: expectedDonationMicroUsd(remaining, PLATFORM_CONFIG.microUsdPerPoint),
-  };
-}
-
-export async function runSettlement(
-  repository: PlatformRepository,
-  month: string,
-  environment: RevenueCatEnvironment,
-  cutoff: string,
-  now = new Date().toISOString(),
-): Promise<{ duplicate: boolean; calculation: SettlementCalculation }> {
-  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) throw new DomainError('INVALID_MONTH');
-  const candidates = await repository.listSettlementCandidates(month, environment, cutoff);
-  const calculation = calculateSettlement(candidates, environment, cutoff);
-  const id = `${month}:${environment}:${PLATFORM_CONFIG.settlementCalculationVersion}`;
-  const saved = await repository.saveSettlement({
-    id,
-    month,
-    environment,
-    cutoff,
-    calculation,
-    expectedDonationDisplay: formatMicroUsd(calculation.expectedDonationMicroUsd),
-    now,
-  });
-  return { duplicate: saved.duplicate, calculation };
 }
 
 export class DomainError extends Error {

@@ -327,11 +327,6 @@ export class DynamoCommunityRepository implements CommunityRepository {
     return undefined;
   }
 
-  private async timezone(userId: string): Promise<string> {
-    const profile = await this.item(this.tables.profile, userId);
-    return typeof profile?.timezone === 'string' ? profile.timezone : 'UTC';
-  }
-
   private async item(tableName: string, id: string): Promise<Record<string, unknown> | undefined> {
     return (await this.client.send(new GetCommand({ TableName: tableName, Key: { id } }))).Item;
   }

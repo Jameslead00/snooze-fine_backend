@@ -2,17 +2,11 @@ export interface CommunityCharity {
   id: string;
   name: string;
   summary: string;
-  websiteUrl?: string | undefined;
-  impactLabel?: string | undefined;
+  websiteUrl: string | undefined;
+  impactLabel: string | undefined;
   votes: number;
   votePercentage: number;
   myAllocatedVotes: number;
-}
-
-export interface CommunityDonationProjection {
-  eligibleMemberCount: number;
-  remainingPoints: number;
-  expectedDonationMicroUsd: number;
 }
 
 export interface CommunityDashboard {
@@ -27,8 +21,8 @@ export interface CommunityDashboard {
   allocatedVotes: number;
   availableVotes: number;
   canAllocateVotes: boolean;
-  contributionStatus?: string | undefined;
   winnerCharityId?: string | undefined;
+  contributionStatus?: string | undefined;
   evidenceUrl?: string | undefined;
   serverTimestamp: string;
 }

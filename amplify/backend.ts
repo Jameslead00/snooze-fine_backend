@@ -12,8 +12,6 @@ import { accountApiFunction } from './functions/account-api/resource.js';
 import { habitApiFunction } from './functions/habit-api/resource.js';
 import { habitEnforcerFunction } from './functions/habit-enforcer/resource.js';
 import { linkRevenueCatCustomerFunction } from './functions/link-revenuecat-customer/resource.js';
-import { monthlySettlementFunction } from './functions/monthly-settlement/resource.js';
-import { recordSnoozeFunction } from './functions/record-snooze/resource.js';
 import { requestAccountDeletionFunction } from './functions/request-account-deletion/resource.js';
 import { revenueCatWebhook } from './functions/revenuecat-webhook/resource.js';
 
@@ -24,8 +22,6 @@ const backend = defineBackend({
   habitApiFunction,
   habitEnforcerFunction,
   linkRevenueCatCustomerFunction,
-  monthlySettlementFunction,
-  recordSnoozeFunction,
   requestAccountDeletionFunction,
   revenueCatWebhook,
 });
@@ -49,21 +45,18 @@ const platformTables = {
   customerLink: requireTable('RevenueCatCustomerLink'),
   webhook: requireTable('RevenueCatWebhookEvent'),
   subscription: requireTable('SubscriptionState'),
-  period: requireTable('PointPeriod'),
-  account: requireTable('PointAccount'),
-  transaction: requireTable('PointTransaction'),
-  snooze: requireTable('SnoozeEvent'),
+  earnedPointAccount: requireTable('DisciPointAccount'),
+  earnedPointEvent: requireTable('DisciPointEarnEvent'),
   syncedAlarm: requireTable('SyncedAlarm'),
   wakeCompletion: requireTable('WakeCompletion'),
   engagementEvent: requireTable('EngagementEvent'),
-  settlement: requireTable('MonthlySettlement'),
   habit: requireTable('HabitDefinition'),
   habitOccurrence: requireTable('HabitOccurrence'),
   habitProgressEvent: requireTable('HabitProgressEvent'),
   charity: requireTable('Charity'),
   communityBallot: requireTable('CommunityBallot'),
-  dailyCharityVote: requireTable('DailyCharityVote'),
-  donationRecord: requireTable('DonationRecord'),
+  charityBallotAllocation: requireTable('CharityBallotAllocation'),
+  companyContribution: requireTable('CompanyContribution'),
   accountDeletionRequest: requireTable('AccountDeletionRequest'),
 };
 const functions = {
@@ -71,8 +64,6 @@ const functions = {
   habit: backend.habitApiFunction,
   habitEnforcer: backend.habitEnforcerFunction,
   link: backend.linkRevenueCatCustomerFunction,
-  settlement: backend.monthlySettlementFunction,
-  snooze: backend.recordSnoozeFunction,
   deletion: backend.requestAccountDeletionFunction,
   webhook: backend.revenueCatWebhook,
 };
@@ -90,18 +81,15 @@ const allTableEnvironment: Array<[string, ITable]> = [
   ['CUSTOMER_LINK_TABLE_NAME', platformTables.customerLink],
   ['WEBHOOK_TABLE_NAME', platformTables.webhook],
   ['SUBSCRIPTION_TABLE_NAME', platformTables.subscription],
-  ['POINT_PERIOD_TABLE_NAME', platformTables.period],
-  ['POINT_ACCOUNT_TABLE_NAME', platformTables.account],
-  ['POINT_TRANSACTION_TABLE_NAME', platformTables.transaction],
-  ['SNOOZE_EVENT_TABLE_NAME', platformTables.snooze],
+  ['DISCIPOINT_ACCOUNT_TABLE_NAME', platformTables.earnedPointAccount],
+  ['DISCIPOINT_EARN_EVENT_TABLE_NAME', platformTables.earnedPointEvent],
   ['SYNCED_ALARM_TABLE_NAME', platformTables.syncedAlarm],
   ['WAKE_COMPLETION_TABLE_NAME', platformTables.wakeCompletion],
   ['ENGAGEMENT_EVENT_TABLE_NAME', platformTables.engagementEvent],
-  ['MONTHLY_SETTLEMENT_TABLE_NAME', platformTables.settlement],
   ['CHARITY_TABLE_NAME', platformTables.charity],
   ['COMMUNITY_BALLOT_TABLE_NAME', platformTables.communityBallot],
-  ['DAILY_CHARITY_VOTE_TABLE_NAME', platformTables.dailyCharityVote],
-  ['DONATION_RECORD_TABLE_NAME', platformTables.donationRecord],
+  ['CHARITY_BALLOT_ALLOCATION_TABLE_NAME', platformTables.charityBallotAllocation],
+  ['COMPANY_CONTRIBUTION_TABLE_NAME', platformTables.companyContribution],
 ];
 
 for (const target of Object.values(functions)) {
@@ -124,44 +112,31 @@ for (const target of [functions.habit, functions.habitEnforcer, functions.accoun
 platformTables.customerLink.grantReadData(functions.webhook.resources.lambda);
 platformTables.webhook.grantReadWriteData(functions.webhook.resources.lambda);
 platformTables.subscription.grantReadWriteData(functions.webhook.resources.lambda);
-platformTables.period.grantReadWriteData(functions.webhook.resources.lambda);
-platformTables.account.grantReadWriteData(functions.webhook.resources.lambda);
-platformTables.transaction.grantReadWriteData(functions.webhook.resources.lambda);
-
-platformTables.subscription.grantReadData(functions.snooze.resources.lambda);
-platformTables.account.grantReadWriteData(functions.snooze.resources.lambda);
-platformTables.period.grantReadWriteData(functions.snooze.resources.lambda);
-platformTables.transaction.grantReadWriteData(functions.snooze.resources.lambda);
-platformTables.snooze.grantReadWriteData(functions.snooze.resources.lambda);
 
 platformTables.userProfile.grantReadWriteData(functions.link.resources.lambda);
 platformTables.customerLink.grantReadWriteData(functions.link.resources.lambda);
 
 platformTables.subscription.grantReadData(functions.account.resources.lambda);
-platformTables.account.grantReadData(functions.account.resources.lambda);
-platformTables.period.grantReadData(functions.account.resources.lambda);
-platformTables.transaction.grantReadData(functions.account.resources.lambda);
 platformTables.userProfile.grantReadData(functions.account.resources.lambda);
-platformTables.snooze.grantReadData(functions.account.resources.lambda);
+platformTables.earnedPointAccount.grantReadWriteData(functions.account.resources.lambda);
+platformTables.earnedPointEvent.grantReadWriteData(functions.account.resources.lambda);
 platformTables.syncedAlarm.grantReadWriteData(functions.account.resources.lambda);
 platformTables.wakeCompletion.grantReadWriteData(functions.account.resources.lambda);
 platformTables.engagementEvent.grantReadWriteData(functions.account.resources.lambda);
 platformTables.charity.grantReadData(functions.account.resources.lambda);
 platformTables.communityBallot.grantReadWriteData(functions.account.resources.lambda);
-platformTables.dailyCharityVote.grantReadWriteData(functions.account.resources.lambda);
-platformTables.donationRecord.grantReadData(functions.account.resources.lambda);
+platformTables.charityBallotAllocation.grantReadWriteData(functions.account.resources.lambda);
+platformTables.companyContribution.grantReadData(functions.account.resources.lambda);
 platformTables.habit.grantReadData(functions.account.resources.lambda);
 platformTables.habitOccurrence.grantReadData(functions.account.resources.lambda);
 functions.account.resources.lambda.addToRolePolicy(
   new PolicyStatement({
     actions: ['dynamodb:Query'],
     resources: [
-      `${platformTables.transaction.tableArn}/index/byUserEnvironmentAndCreatedAt`,
-      `${platformTables.snooze.tableArn}/index/byUserAndReceivedAt`,
+      `${platformTables.earnedPointEvent.tableArn}/index/byUserEnvironmentAndCreatedAt`,
       `${platformTables.syncedAlarm.tableArn}/index/byUserEnvironmentAndUpdatedAt`,
       `${platformTables.wakeCompletion.tableArn}/index/byUserEnvironmentAndCompletedAt`,
       `${platformTables.communityBallot.tableArn}/index/byEnvironmentStatusAndClosesAt`,
-      `${platformTables.period.tableArn}/index/byEnvironmentAndPeriodEnd`,
       `${platformTables.habit.tableArn}/index/byUserEnvironmentAndUpdatedAt`,
       `${platformTables.habitOccurrence.tableArn}/index/byUserEnvironmentDateAndHabitId`,
     ],
@@ -171,7 +146,8 @@ functions.account.resources.lambda.addToRolePolicy(
 platformTables.habit.grantReadWriteData(functions.habit.resources.lambda);
 platformTables.habitOccurrence.grantReadWriteData(functions.habit.resources.lambda);
 platformTables.habitProgressEvent.grantReadWriteData(functions.habit.resources.lambda);
-platformTables.account.grantReadData(functions.habit.resources.lambda);
+platformTables.earnedPointAccount.grantReadWriteData(functions.habit.resources.lambda);
+platformTables.earnedPointEvent.grantReadWriteData(functions.habit.resources.lambda);
 functions.habit.resources.lambda.addToRolePolicy(
   new PolicyStatement({
     actions: ['dynamodb:Query'],
@@ -184,10 +160,6 @@ functions.habit.resources.lambda.addToRolePolicy(
 
 platformTables.habit.grantReadData(functions.habitEnforcer.resources.lambda);
 platformTables.habitOccurrence.grantReadWriteData(functions.habitEnforcer.resources.lambda);
-platformTables.subscription.grantReadData(functions.habitEnforcer.resources.lambda);
-platformTables.account.grantReadWriteData(functions.habitEnforcer.resources.lambda);
-platformTables.period.grantReadWriteData(functions.habitEnforcer.resources.lambda);
-platformTables.transaction.grantReadWriteData(functions.habitEnforcer.resources.lambda);
 functions.habitEnforcer.resources.lambda.addToRolePolicy(
   new PolicyStatement({
     actions: ['dynamodb:Query'],
@@ -202,9 +174,6 @@ const habitEnforcementRule = new Rule(habitScheduleStack, 'HabitEnforcementRule'
 });
 habitEnforcementRule.addTarget(new LambdaFunction(functions.habitEnforcer.resources.lambda));
 
-platformTables.subscription.grantReadData(functions.settlement.resources.lambda);
-platformTables.period.grantReadData(functions.settlement.resources.lambda);
-platformTables.settlement.grantReadWriteData(functions.settlement.resources.lambda);
 
 platformTables.accountDeletionRequest.grantWriteData(functions.deletion.resources.lambda);
 functions.deletion.addEnvironment(
@@ -231,7 +200,6 @@ backend.addOutput({
     snoozefine: {
       revenuecat_webhook_url: `${webhookApi.apiEndpoint}/webhooks/revenuecat`,
       environment: process.env.SNOOZEFINE_ENVIRONMENT === 'PRODUCTION' ? 'PRODUCTION' : 'SANDBOX',
-      settlement_mode: 'TEST',
     },
   },
 });

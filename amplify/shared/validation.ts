@@ -102,15 +102,6 @@ export class PayloadTooLargeError extends Error {
   }
 }
 
-export const recordSnoozeArgumentsSchema = z.object({
-  alarmId: z.string().min(1).max(200),
-  alarmOccurrenceId: z.string().min(1).max(200),
-  snoozeEventId: z.string().uuid(),
-  occurredAt: z.iso.datetime({ offset: true }),
-  legacyPurchaseReference: z.string().min(1).max(512).optional(),
-  clientAppVersion: z.string().min(1).max(100).optional(),
-});
-
 export const linkRevenueCatArgumentsSchema = z.object({
   revenueCatAppUserId: z.string().min(1).max(512),
   originalAnonymousAppUserId: z
