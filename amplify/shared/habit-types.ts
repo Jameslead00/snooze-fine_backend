@@ -1,6 +1,7 @@
 import type { RevenueCatEnvironment } from './config.js';
 
-export type HabitKind = 'WATER' | 'READING' | 'MEDITATION' | 'CUSTOM';
+export type HabitKind = 'WATER' | 'READING' | 'MEDITATION' | 'BED' | 'CUSTOM';
+export type SavableHabitKind = Exclude<HabitKind, 'CUSTOM'>;
 export type HabitUnit = 'MILLILITRES' | 'MINUTES' | 'COUNT' | 'CHECKMARK';
 export type HabitOccurrenceStatus = 'PENDING' | 'COMPLETED' | 'MISSED' | 'SKIPPED_INELIGIBLE';
 
@@ -13,11 +14,11 @@ export interface HabitDefinition {
   kind: HabitKind;
   title: string;
   targetValue: number;
+  stepValue: number;
   unit: HabitUnit;
   weekdays: number[];
   deadlineMinutes: number;
   timezone: string;
-  penaltyPoints: number;
   startDate: string;
   activeState: 'ACTIVE' | 'ARCHIVED';
   version: number;
@@ -39,9 +40,6 @@ export interface HabitOccurrence {
   status: HabitOccurrenceStatus;
   completedAt: string | undefined;
   missedAt: string | undefined;
-  ledgerTransactionId: string | undefined;
-  pointsDeducted: number;
-  officialBalance: number;
   version: number;
   createdAt: string;
   updatedAt: string;
@@ -50,9 +48,10 @@ export interface HabitOccurrence {
 export interface SaveHabitCommand {
   userId: string;
   habitId: string;
-  kind: HabitKind;
+  kind: SavableHabitKind;
   title: string;
   targetValue: number;
+  stepValue: number;
   unit: HabitUnit;
   weekdays: number[];
   deadlineMinutes: number;
@@ -75,15 +74,12 @@ export interface HabitProgressResult {
   progressValue: number;
   targetValue: number;
   status: HabitOccurrenceStatus;
-  officialBalance: number;
   serverTimestamp: string;
 }
 
 export interface HabitSettlementResult {
   duplicate: boolean;
   status: HabitOccurrenceStatus;
-  pointsDeducted: number;
-  officialBalance: number;
 }
 
 export interface HabitView extends HabitDefinition {
@@ -91,4 +87,19 @@ export interface HabitView extends HabitDefinition {
   todayProgress: number;
   todayStatus: HabitOccurrenceStatus | 'NOT_SCHEDULED';
   todayDueAt: string | undefined;
+  /** Fixed server-configured points earned after a successful completion. */
+  completionAwardPoints: number;
+}
+
+export function defaultHabitStepValue(kind: HabitKind): number {
+  switch (kind) {
+    case 'WATER':
+      return 250;
+    case 'READING':
+    case 'MEDITATION':
+      return 10;
+    case 'BED':
+    case 'CUSTOM':
+      return 1;
+  }
 }

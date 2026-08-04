@@ -59,9 +59,6 @@ export interface AccountabilityStatistics {
   allTimeSnoozes: number;
   allTimeWakeUps: number;
   allTimeNoSnoozeMornings: number;
-  currentBalance: number;
-  currentPeriodDeducted: number;
-  lifetimeDeducted: number;
   timezone: string;
   serverTimestamp: string;
 }

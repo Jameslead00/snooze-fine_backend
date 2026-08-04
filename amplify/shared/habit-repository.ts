@@ -13,7 +13,6 @@ export interface HabitRepository {
   saveHabit(
     command: SaveHabitCommand,
     startDate: string,
-    penaltyPoints: number,
     now: string,
   ): Promise<HabitDefinition>;
   archiveHabit(userId: string, habitId: string, now: string): Promise<HabitDefinition>;
@@ -29,6 +28,5 @@ export interface HabitRepository {
     occurrence: HabitOccurrence;
     now: string;
   }): Promise<HabitSettlementResult>;
-  officialBalance(userId: string): Promise<number>;
   listOccurrences(userId: string, localDate: string): Promise<HabitOccurrence[]>;
 }

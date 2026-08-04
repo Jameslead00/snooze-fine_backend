@@ -20,10 +20,7 @@ import type {
 export interface SyncTableNames {
   alarm: string;
   wake: string;
-  snooze: string;
   profile: string;
-  account: string;
-  period: string;
 }
 
 const requiredEnvironmentVariable = (name: string): string => {
@@ -36,10 +33,7 @@ export function syncTableNamesFromEnvironment(): SyncTableNames {
   return {
     alarm: requiredEnvironmentVariable('SYNCED_ALARM_TABLE_NAME'),
     wake: requiredEnvironmentVariable('WAKE_COMPLETION_TABLE_NAME'),
-    snooze: requiredEnvironmentVariable('SNOOZE_EVENT_TABLE_NAME'),
     profile: requiredEnvironmentVariable('USER_PROFILE_TABLE_NAME'),
-    account: requiredEnvironmentVariable('POINT_ACCOUNT_TABLE_NAME'),
-    period: requiredEnvironmentVariable('POINT_PERIOD_TABLE_NAME'),
   };
 }
 
@@ -183,18 +177,6 @@ export class DynamoSyncRepository implements SyncRepository {
       if (event.userId !== command.userId) throw new DomainError('WAKE_EVENT_ID_ALREADY_USED');
       return { event, duplicate: true };
     }
-    const snoozes = await this.queryAll(
-      this.tables.snooze,
-      'byUserAndReceivedAt',
-      'userId',
-      command.userId,
-    );
-    const snoozeCount = snoozes.filter(
-      (item) =>
-        item.environment === this.environment &&
-        item.alarmOccurrenceId === command.alarmOccurrenceId &&
-        item.status === 'ACCEPTED',
-    ).length;
     const event: WakeCompletion = {
       id: command.wakeEventId,
       userId: command.userId,
@@ -204,7 +186,7 @@ export class DynamoSyncRepository implements SyncRepository {
       alarmOccurrenceId: command.alarmOccurrenceId,
       scheduledAt: command.scheduledAt,
       completedAt: command.completedAt,
-      snoozeCount,
+      snoozeCount: 0,
       createdAt: now,
     };
     try {
@@ -238,35 +220,14 @@ export class DynamoSyncRepository implements SyncRepository {
         userEnvironment(userId, this.environment),
       )
     ).map(asWake);
-    const snoozes = await this.queryAll(
-      this.tables.snooze,
-      'byUserAndReceivedAt',
-      'userId',
-      userId,
-    );
-    const acceptedSnoozes = snoozes.filter(
-      (item) => item.environment === this.environment && item.status === 'ACCEPTED',
-    );
     const weekWakes = wakes.filter((wake) => wake.completedAt >= weekStart);
-    const account = await this.item(this.tables.account, userEnvironment(userId, this.environment));
-    const activePeriodId =
-      typeof account?.activePeriodId === 'string' ? account.activePeriodId : undefined;
-    const period =
-      activePeriodId === undefined
-        ? undefined
-        : await this.item(this.tables.period, activePeriodId);
-    const initialAllocation = Number(period?.initialAllocation ?? 0);
-    const currentBalance = Number(account?.currentBalance ?? 0);
     return {
-      weekSnoozes: acceptedSnoozes.filter((item) => String(item.occurredAt) >= weekStart).length,
+      weekSnoozes: 0,
       weekWakeUps: weekWakes.length,
       weekNoSnoozeMornings: weekWakes.filter((wake) => wake.snoozeCount === 0).length,
-      allTimeSnoozes: acceptedSnoozes.length,
+      allTimeSnoozes: 0,
       allTimeWakeUps: wakes.length,
       allTimeNoSnoozeMornings: wakes.filter((wake) => wake.snoozeCount === 0).length,
-      currentBalance,
-      currentPeriodDeducted: Math.max(0, initialAllocation - currentBalance),
-      lifetimeDeducted: Number(account?.lifetimeDeducted ?? 0),
       timezone,
       serverTimestamp: now,
     };

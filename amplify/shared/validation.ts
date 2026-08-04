@@ -102,23 +102,20 @@ export class PayloadTooLargeError extends Error {
   }
 }
 
-export const recordSnoozeArgumentsSchema = z.object({
-  alarmId: z.string().min(1).max(200),
-  alarmOccurrenceId: z.string().min(1).max(200),
-  snoozeEventId: z.string().uuid(),
-  occurredAt: z.iso.datetime({ offset: true }),
-  legacyPurchaseReference: z.string().min(1).max(512).optional(),
-  clientAppVersion: z.string().min(1).max(100).optional(),
-});
-
 export const linkRevenueCatArgumentsSchema = z.object({
   revenueCatAppUserId: z.string().min(1).max(512),
-  originalAnonymousAppUserId: z.string().min(1).max(512).optional(),
+  originalAnonymousAppUserId: z
+    .string()
+    .min(1)
+    .max(512)
+    .nullish()
+    .transform((value) => value ?? undefined),
   timezone: z.string().min(1).max(100),
   creatorCode: z
     .string()
     .regex(/^[A-Z0-9]{1,24}$/)
-    .optional(),
+    .nullish()
+    .transform((value) => value ?? undefined),
 });
 
 export const listTransactionsArgumentsSchema = z.object({
@@ -136,7 +133,7 @@ export const listTransactionsArgumentsSchema = z.object({
     .transform((value) => value ?? undefined),
 });
 
-const habitKindSchema = z.enum(['WATER', 'READING', 'MEDITATION', 'CUSTOM']);
+const habitKindSchema = z.enum(['WATER', 'READING', 'MEDITATION', 'BED']);
 const habitUnitSchema = z.enum(['MILLILITRES', 'MINUTES', 'COUNT', 'CHECKMARK']);
 
 export const saveHabitArgumentsSchema = z.object({
@@ -144,6 +141,7 @@ export const saveHabitArgumentsSchema = z.object({
   kind: habitKindSchema,
   title: z.string().trim().min(1).max(80),
   targetValue: z.number().int().min(1).max(100_000),
+  stepValue: z.number().int().min(1).max(100_000).optional(),
   unit: habitUnitSchema,
   weekdays: z.array(z.number().int().min(1).max(7)).min(1).max(7),
   deadlineMinutes: z.number().int().min(0).max(1_439),
@@ -184,10 +182,6 @@ export const recordWakeCompletionArgumentsSchema = z.object({
   alarmOccurrenceId: z.string().min(1).max(200),
   scheduledAt: z.iso.datetime({ offset: true }),
   completedAt: z.iso.datetime({ offset: true }),
-});
-
-export const charityVoteArgumentsSchema = z.object({
-  charityId: z.string().min(1).max(200),
 });
 
 export const recordEngagementArgumentsSchema = z.object({

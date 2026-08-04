@@ -2,8 +2,6 @@ import { type ClientSchema, a, defineData } from '@aws-amplify/backend';
 import { accountApiFunction } from '../functions/account-api/resource.js';
 import { habitApiFunction } from '../functions/habit-api/resource.js';
 import { linkRevenueCatCustomerFunction } from '../functions/link-revenuecat-customer/resource.js';
-import { monthlySettlementFunction } from '../functions/monthly-settlement/resource.js';
-import { recordSnoozeFunction } from '../functions/record-snooze/resource.js';
 import { requestAccountDeletionFunction } from '../functions/request-account-deletion/resource.js';
 
 const schema = a.schema({
@@ -12,6 +10,7 @@ const schema = a.schema({
       userId: a.id().required(),
       email: a.email(),
       displayName: a.string(),
+      username: a.string(),
       creatorCode: a.string(),
       timezone: a.string().required(),
     })
@@ -86,85 +85,39 @@ const schema = a.schema({
     ])
     .authorization((allow) => [allow.group('ADMINS').to(['read'])]),
 
-  PointPeriod: a
-    .model({
-      id: a.id().required(),
-      userId: a.id().required(),
-      entitlementId: a.string().required(),
-      productId: a.string().required(),
-      periodStart: a.datetime().required(),
-      periodEnd: a.datetime().required(),
-      environment: a.enum(['SANDBOX', 'PRODUCTION']),
-      initialAllocation: a.integer().required(),
-      currentRemaining: a.integer().required(),
-      status: a.enum(['ACTIVE', 'EXPIRED']),
-      allocationTransactionId: a.string().required(),
-    })
-    .secondaryIndexes((index) => [
-      index('userId').sortKeys(['periodStart']).name('byUserAndPeriodStart'),
-      index('environment').sortKeys(['periodEnd']).name('byEnvironmentAndPeriodEnd'),
-    ])
-    .authorization((allow) => [allow.group('ADMINS').to(['read'])]),
-
-  PointAccount: a
-    .model({
-      id: a.id().required(),
-      userId: a.id().required(),
-      environment: a.enum(['SANDBOX', 'PRODUCTION']),
-      currentBalance: a.integer().required(),
-      activePeriodId: a.id(),
-      lifetimeAllocated: a.integer().required(),
-      lifetimeDeducted: a.integer().required(),
-      version: a.integer().required(),
-    })
-    .authorization((allow) => [allow.group('ADMINS').to(['read'])]),
-
-  PointTransaction: a
+  // The earned-points ledger has no monetary fields and records only positive,
+  // idempotent qualification events.
+  DisciPointAccount: a
     .model({
       id: a.id().required(),
       userId: a.id().required(),
       environment: a.enum(['SANDBOX', 'PRODUCTION']),
       userEnvironment: a.string().required(),
-      pointPeriodId: a.id().required(),
-      amount: a.integer().required(),
-      transactionType: a.enum([
-        'MONTHLY_ALLOCATION',
-        'SNOOZE_DEDUCTION',
-        'HABIT_DEDUCTION',
-        'ADMIN_ADJUSTMENT',
-      ]),
-      reasonCode: a.string().required(),
-      source: a.enum(['REVENUECAT_WEBHOOK', 'IOS_APP', 'ACCOUNTABILITY_ENGINE', 'ADMIN']),
-      idempotencyKey: a.string().required(),
-      sourceEventId: a.string().required(),
-      relatedEventId: a.string(),
-      balanceAfter: a.integer().required(),
+      currentPoints: a.integer().required(),
+      lifetimeEarned: a.integer().required(),
+      version: a.integer().required(),
       createdAt: a.datetime().required(),
-      metadataJson: a.json(),
+      updatedAt: a.datetime().required(),
     })
     .secondaryIndexes((index) => [
-      index('userEnvironment').sortKeys(['createdAt']).name('byUserEnvironmentAndCreatedAt'),
+      index('userEnvironment').sortKeys(['updatedAt']).name('byUserEnvironmentAndUpdatedAt'),
     ])
     .authorization((allow) => [allow.group('ADMINS').to(['read'])]),
 
-  SnoozeEvent: a
+  DisciPointEarnEvent: a
     .model({
       id: a.id().required(),
       userId: a.id().required(),
       environment: a.enum(['SANDBOX', 'PRODUCTION']),
-      alarmId: a.string().required(),
-      alarmOccurrenceId: a.string().required(),
-      occurredAt: a.datetime().required(),
-      receivedAt: a.datetime().required(),
-      status: a.enum(['ACCEPTED', 'REJECTED']),
-      ledgerTransactionId: a.string(),
-      pointsDeducted: a.integer().required(),
-      officialBalance: a.integer().required(),
-      clientAppVersion: a.string(),
-      legacyPurchaseReference: a.string(),
+      userEnvironment: a.string().required(),
+      qualification: a.enum(['WAKE_COMPLETION', 'HABIT_COMPLETION']),
+      sourceEventId: a.string().required(),
+      pointsEarned: a.integer().required(),
+      pointsAfter: a.integer().required(),
+      createdAt: a.datetime().required(),
     })
     .secondaryIndexes((index) => [
-      index('userId').sortKeys(['receivedAt']).name('byUserAndReceivedAt'),
+      index('userEnvironment').sortKeys(['createdAt']).name('byUserEnvironmentAndCreatedAt'),
     ])
     .authorization((allow) => [allow.group('ADMINS').to(['read'])]),
 
@@ -240,14 +193,18 @@ const schema = a.schema({
       environment: a.enum(['SANDBOX', 'PRODUCTION']),
       userEnvironment: a.string().required(),
       environmentState: a.string().required(),
-      kind: a.enum(['WATER', 'READING', 'MEDITATION', 'CUSTOM']),
+      // CUSTOM remains readable for legacy records, but all new fixed habits
+      // use their own explicit enum value, including BED.
+      kind: a.enum(['WATER', 'READING', 'MEDITATION', 'BED', 'CUSTOM']),
       title: a.string().required(),
       targetValue: a.integer().required(),
+      // Optional for backwards compatibility with habits created before
+      // per-habit progress steps were introduced.
+      stepValue: a.integer(),
       unit: a.enum(['MILLILITRES', 'MINUTES', 'COUNT', 'CHECKMARK']),
       weekdays: a.integer().array().required(),
       deadlineMinutes: a.integer().required(),
       timezone: a.string().required(),
-      penaltyPoints: a.integer().required(),
       startDate: a.date().required(),
       activeState: a.enum(['ACTIVE', 'ARCHIVED']),
       version: a.integer().required(),
@@ -275,9 +232,6 @@ const schema = a.schema({
       status: a.enum(['PENDING', 'COMPLETED', 'MISSED', 'SKIPPED_INELIGIBLE']),
       completedAt: a.datetime(),
       missedAt: a.datetime(),
-      ledgerTransactionId: a.string(),
-      pointsDeducted: a.integer().required(),
-      officialBalance: a.integer().required(),
       version: a.integer().required(),
       createdAt: a.datetime().required(),
       updatedAt: a.datetime().required(),
@@ -304,104 +258,54 @@ const schema = a.schema({
     ])
     .authorization((allow) => [allow.group('ADMINS').to(['read'])]),
 
-  MonthlySettlement: a
-    .model({
-      id: a.id().required(),
-      calendarMonth: a.string().required(),
-      environment: a.enum(['SANDBOX', 'PRODUCTION']),
-      mode: a.enum(['TEST']),
-      eligibleUserCount: a.integer().required(),
-      totalAllocatedPoints: a.integer().required(),
-      totalDeductedPoints: a.integer().required(),
-      totalRemainingPoints: a.integer().required(),
-      donationRateMicroUsdPerPoint: a.integer().required(),
-      expectedDonationMicroUsd: a.string().required(),
-      expectedDonationDisplay: a.string().required(),
-      calculationVersion: a.string().required(),
-      cutoffAt: a.datetime().required(),
-      status: a.enum(['CALCULATING', 'CALCULATED', 'FAILED', 'VOID']),
-      completedAt: a.datetime(),
-      errorSummary: a.string(),
-      calculationMetadata: a.json(),
-    })
-    .secondaryIndexes((index) => [
-      index('environment').sortKeys(['calendarMonth']).name('byEnvironmentAndMonth'),
-    ])
-    .authorization((allow) => [allow.group('ADMINS').to(['read'])]),
-
-  Charity: a
-    .model({
-      id: a.id().required(),
-      name: a.string().required(),
-      summary: a.string().required(),
-      websiteUrl: a.url(),
-      impactLabel: a.string(),
-      active: a.boolean().required(),
-      activeState: a.string().required(),
-      sortOrder: a.integer().required(),
-      updatedAt: a.datetime().required(),
-    })
-    .secondaryIndexes((index) => [
-      index('activeState').sortKeys(['sortOrder']).name('byActiveStateAndSortOrder'),
-    ])
-    .authorization((allow) => [allow.group('ADMINS').to(['read'])]),
-
-  CommunityBallot: a
-    .model({
-      id: a.id().required(),
-      month: a.string().required(),
-      environment: a.enum(['SANDBOX', 'PRODUCTION']),
-      environmentStatus: a.string().required(),
-      status: a.enum(['OPEN', 'CLOSED']),
-      opensAt: a.datetime().required(),
-      closesAt: a.datetime().required(),
-      charityIds: a.string().array().required(),
-      tallies: a.json().required(),
-      totalVotes: a.integer().required(),
-      winnerCharityId: a.id(),
-      donationRecordId: a.id(),
-      version: a.integer().required(),
-      updatedAt: a.datetime().required(),
-    })
-    .secondaryIndexes((index) => [
-      index('environmentStatus').sortKeys(['closesAt']).name('byEnvironmentStatusAndClosesAt'),
-    ])
-    .authorization((allow) => [allow.group('ADMINS').to(['read'])]),
-
-  DailyCharityVote: a
+  // A normalized username is atomically reserved by this id-keyed record.
+  UsernameReservation: a
     .model({
       id: a.id().required(),
       userId: a.id().required(),
-      environment: a.enum(['SANDBOX', 'PRODUCTION']),
-      ballotId: a.id().required(),
-      charityId: a.id().required(),
-      localVoteDate: a.date().required(),
-      timezone: a.string().required(),
       createdAt: a.datetime().required(),
     })
-    .secondaryIndexes((index) => [
-      index('ballotId').sortKeys(['createdAt']).name('byBallotAndCreatedAt'),
-      index('userId').sortKeys(['createdAt']).name('byUserAndCreatedAt'),
-    ])
     .authorization((allow) => [allow.group('ADMINS').to(['read'])]),
 
-  DonationRecord: a
+  FriendRequest: a
     .model({
       id: a.id().required(),
-      month: a.string().required(),
+      requesterUserId: a.id().required(),
+      recipientUserId: a.id().required(),
+      requesterUsername: a.string().required(),
+      requesterDisplayName: a.string().required(),
+      recipientUsername: a.string().required(),
+      recipientDisplayName: a.string().required(),
       environment: a.enum(['SANDBOX', 'PRODUCTION']),
-      charityId: a.id().required(),
-      status: a.enum(['EXPECTED', 'APPROVED', 'PAID', 'EVIDENCED', 'VOID']),
-      expectedDonationMicroUsd: a.string().required(),
-      approvedDonationMicroUsd: a.string(),
-      paidDonationMicroUsd: a.string(),
-      paidAt: a.datetime(),
-      evidenceUrl: a.url(),
-      ownerNote: a.string(),
+      requesterEnvironment: a.string().required(),
+      recipientEnvironment: a.string().required(),
+      status: a.enum(['PENDING', 'ACCEPTED', 'DECLINED', 'CANCELLED']),
+      acceptedAt: a.datetime(),
+      createdAt: a.datetime().required(),
       updatedAt: a.datetime().required(),
     })
     .secondaryIndexes((index) => [
-      index('environment').sortKeys(['month']).name('byEnvironmentAndMonth'),
+      index('requesterEnvironment')
+        .sortKeys(['updatedAt'])
+        .name('byRequesterEnvironmentAndUpdatedAt'),
+      index('recipientEnvironment')
+        .sortKeys(['updatedAt'])
+        .name('byRecipientEnvironmentAndUpdatedAt'),
+    ])
+    .authorization((allow) => [allow.group('ADMINS').to(['read'])]),
+
+  // Each accepted friendship is stored twice, once for each participant.
+  FriendConnection: a
+    .model({
+      id: a.id().required(),
+      userId: a.id().required(),
+      friendUserId: a.id().required(),
+      environment: a.enum(['SANDBOX', 'PRODUCTION']),
+      userEnvironment: a.string().required(),
+      createdAt: a.datetime().required(),
+    })
+    .secondaryIndexes((index) => [
+      index('userEnvironment').sortKeys(['createdAt']).name('byUserEnvironmentAndCreatedAt'),
     ])
     .authorization((allow) => [allow.group('ADMINS').to(['read'])]),
 
@@ -421,66 +325,37 @@ const schema = a.schema({
     ])
     .authorization((allow) => [allow.group('ADMINS').to(['read', 'update'])]),
 
-  RecordSnoozeInput: a.customType({
-    alarmId: a.string().required(),
-    alarmOccurrenceId: a.string().required(),
-    snoozeEventId: a.id().required(),
-    occurredAt: a.datetime().required(),
-    legacyPurchaseReference: a.string(),
-    clientAppVersion: a.string(),
-  }),
-  RecordSnoozeResult: a.customType({
-    accepted: a.boolean().required(),
-    duplicate: a.boolean().required(),
-    pointsDeducted: a.integer().required(),
-    officialBalance: a.integer().required(),
-    activePointPeriodId: a.id().required(),
-    serverTimestamp: a.datetime().required(),
-  }),
-  PointAccountResult: a.customType({
+  EarnedPointAccountResult: a.customType({
     isEligible: a.boolean().required(),
-    officialBalance: a.integer().required(),
-    activePointPeriodId: a.id(),
-    initialAllocation: a.integer().required(),
-    pointsDeducted: a.integer().required(),
-    periodStart: a.datetime(),
-    periodEnd: a.datetime(),
+    earnedPointsTotal: a.integer().required(),
     subscriptionStatus: a.string().required(),
-    donationMicroUsd: a.string().required(),
     serverTimestamp: a.datetime().required(),
   }),
-  PointTransactionResult: a.customType({
+  PointAwardResult: a.customType({
     id: a.id().required(),
-    pointPeriodId: a.id().required(),
-    amount: a.integer().required(),
-    transactionType: a.string().required(),
+    achievementType: a.string().required(),
+    pointsAwarded: a.integer().required(),
     reasonCode: a.string().required(),
     source: a.string().required(),
     sourceEventId: a.string().required(),
     relatedEventId: a.string(),
-    balanceAfter: a.integer().required(),
+    earnedPointsTotalAfter: a.integer().required(),
     createdAt: a.datetime().required(),
   }),
-  PointTransactionPage: a.customType({
-    items: a.ref('PointTransactionResult').array().required(),
+  PointAwardPage: a.customType({
+    items: a.ref('PointAwardResult').array().required(),
     nextToken: a.string(),
   }),
   LinkRevenueCatResult: a.customType({
     linked: a.boolean().required(),
     duplicate: a.boolean().required(),
   }),
-  SettlementResult: a.customType({
-    duplicate: a.boolean().required(),
-    eligibleUserCount: a.integer().required(),
-    totalRemainingPoints: a.integer().required(),
-    expectedDonationMicroUsd: a.string().required(),
-    warning: a.string().required(),
-  }),
   SaveHabitInput: a.customType({
     habitId: a.id().required(),
-    kind: a.enum(['WATER', 'READING', 'MEDITATION', 'CUSTOM']),
+    kind: a.enum(['WATER', 'READING', 'MEDITATION', 'BED']),
     title: a.string().required(),
     targetValue: a.integer().required(),
+    stepValue: a.integer(),
     unit: a.enum(['MILLILITRES', 'MINUTES', 'COUNT', 'CHECKMARK']),
     weekdays: a.integer().array().required(),
     deadlineMinutes: a.integer().required(),
@@ -491,16 +366,19 @@ const schema = a.schema({
     kind: a.string().required(),
     title: a.string().required(),
     targetValue: a.integer().required(),
+    stepValue: a.integer().required(),
     unit: a.string().required(),
     weekdays: a.integer().array().required(),
     deadlineMinutes: a.integer().required(),
     timezone: a.string().required(),
-    penaltyPoints: a.integer().required(),
     activeState: a.string().required(),
     scheduledToday: a.boolean().required(),
     todayProgress: a.integer().required(),
     todayStatus: a.string().required(),
     todayDueAt: a.datetime(),
+    // Informational only: a fixed, server-configured award for completing this
+    // habit. It is never a balance, penalty, or monetary conversion.
+    completionAwardPoints: a.integer().required(),
     createdAt: a.datetime().required(),
     updatedAt: a.datetime().required(),
   }),
@@ -523,7 +401,8 @@ const schema = a.schema({
     progressValue: a.integer().required(),
     targetValue: a.integer().required(),
     status: a.string().required(),
-    officialBalance: a.integer().required(),
+    pointsAwarded: a.integer().required(),
+    earnedPointsTotal: a.integer().required(),
     serverTimestamp: a.datetime().required(),
   }),
   SaveSyncedAlarmInput: a.customType({
@@ -567,6 +446,8 @@ const schema = a.schema({
     accepted: a.boolean().required(),
     duplicate: a.boolean().required(),
     snoozeCount: a.integer().required(),
+    pointsAwarded: a.integer().required(),
+    earnedPointsTotal: a.integer().required(),
     serverTimestamp: a.datetime().required(),
   }),
   AccountabilityStatisticsResult: a.customType({
@@ -576,43 +457,98 @@ const schema = a.schema({
     allTimeSnoozes: a.integer().required(),
     allTimeWakeUps: a.integer().required(),
     allTimeNoSnoozeMornings: a.integer().required(),
-    currentBalance: a.integer().required(),
-    currentPeriodDeducted: a.integer().required(),
-    lifetimeDeducted: a.integer().required(),
+    earnedPointsTotal: a.integer().required(),
     timezone: a.string().required(),
     serverTimestamp: a.datetime().required(),
   }),
-  CommunityCharityResult: a.customType({
-    id: a.id().required(),
-    name: a.string().required(),
-    summary: a.string().required(),
-    websiteUrl: a.url(),
-    impactLabel: a.string(),
-    votes: a.integer().required(),
+  WeeklyRecapHabitResult: a.customType({
+    kind: a.string().required(),
+    title: a.string().required(),
+    unit: a.string().required(),
+    scheduledDays: a.integer().required(),
+    completedDays: a.integer().required(),
+    progressValue: a.integer().required(),
+    targetValue: a.integer().required(),
+    progressPercentage: a.float().required(),
   }),
-  CommunityDashboardResult: a.customType({
-    ballotId: a.id(),
-    month: a.string(),
-    status: a.string().required(),
-    opensAt: a.datetime(),
-    closesAt: a.datetime(),
-    charities: a.ref('CommunityCharityResult').array().required(),
-    totalVotes: a.integer().required(),
-    myVoteCharityId: a.id(),
-    canVoteToday: a.boolean().required(),
-    winnerCharityId: a.id(),
-    donationStatus: a.string(),
-    expectedDonationMicroUsd: a.string(),
-    paidDonationMicroUsd: a.string(),
-    evidenceUrl: a.url(),
+  WeeklyProgressRecapResult: a.customType({
+    period: a.string().required(),
+    periodStart: a.date().required(),
+    periodEnd: a.date().required(),
+    includedDays: a.integer().required(),
+    timezone: a.string().required(),
+    habits: a.ref('WeeklyRecapHabitResult').array().required(),
+    promisesScheduled: a.integer().required(),
+    promisesKept: a.integer().required(),
+    promisesPercentage: a.float().required(),
+    wakeUps: a.integer().required(),
+    noSnoozeMornings: a.integer().required(),
     serverTimestamp: a.datetime().required(),
   }),
-  CommunityVoteResult: a.customType({
+  SocialProfileResult: a.customType({
+    usernameRequired: a.boolean().required(),
+    username: a.string(),
+    displayName: a.string().required(),
+    serverTimestamp: a.datetime().required(),
+  }),
+  SetUsernameResult: a.customType({
+    username: a.string().required(),
+    duplicate: a.boolean().required(),
+    serverTimestamp: a.datetime().required(),
+  }),
+  FriendRequestResult: a.customType({
+    requestId: a.id().required(),
+    status: a.string().required(),
+    direction: a.string().required(),
+    counterpartUsername: a.string().required(),
+    counterpartDisplayName: a.string().required(),
+    createdAt: a.datetime().required(),
+    updatedAt: a.datetime().required(),
+    serverTimestamp: a.datetime().required(),
+  }),
+  FriendRequestPage: a.customType({
+    incoming: a.ref('FriendRequestResult').array().required(),
+    outgoing: a.ref('FriendRequestResult').array().required(),
+    serverTimestamp: a.datetime().required(),
+  }),
+  SendFriendRequestResult: a.customType({
+    sent: a.boolean().required(),
+    request: a.ref('FriendRequestResult'),
+    duplicate: a.boolean().required(),
+    serverTimestamp: a.datetime().required(),
+  }),
+  FriendResult: a.customType({
+    friendId: a.id().required(),
+    username: a.string().required(),
+    displayName: a.string().required(),
+    friendsSince: a.datetime().required(),
+  }),
+  FriendPage: a.customType({
+    items: a.ref('FriendResult').array().required(),
+  }),
+  AcceptFriendRequestResult: a.customType({
     accepted: a.boolean().required(),
     duplicate: a.boolean().required(),
-    charityId: a.id().required(),
-    localVoteDate: a.date().required(),
-    totalVotes: a.integer().required(),
+    friend: a.ref('FriendResult').required(),
+    serverTimestamp: a.datetime().required(),
+  }),
+  RemoveFriendResult: a.customType({
+    removed: a.boolean().required(),
+    serverTimestamp: a.datetime().required(),
+  }),
+  FriendLeaderboardEntry: a.customType({
+    friendId: a.id(),
+    username: a.string().required(),
+    displayName: a.string().required(),
+    currentMonthPoints: a.integer().required(),
+    rank: a.integer().required(),
+    isCurrentUser: a.boolean().required(),
+  }),
+  FriendsLeaderboardResult: a.customType({
+    period: a.string().required(),
+    periodStart: a.datetime().required(),
+    periodEnd: a.datetime().required(),
+    entries: a.ref('FriendLeaderboardEntry').array().required(),
     serverTimestamp: a.datetime().required(),
   }),
   AccountDeletionRequestResult: a.customType({
@@ -639,13 +575,6 @@ const schema = a.schema({
     serverTimestamp: a.datetime().required(),
   }),
 
-  recordSnooze: a
-    .mutation()
-    .arguments({ input: a.ref('RecordSnoozeInput').required() })
-    .returns(a.ref('RecordSnoozeResult'))
-    .authorization((allow) => [allow.authenticated()])
-    .handler(a.handler.function(recordSnoozeFunction)),
-
   linkRevenueCatCustomer: a
     .mutation()
     .arguments({
@@ -658,16 +587,16 @@ const schema = a.schema({
     .authorization((allow) => [allow.authenticated()])
     .handler(a.handler.function(linkRevenueCatCustomerFunction)),
 
-  getMyPointAccount: a
+  getMyEarnedPointAccount: a
     .query()
-    .returns(a.ref('PointAccountResult'))
+    .returns(a.ref('EarnedPointAccountResult'))
     .authorization((allow) => [allow.authenticated()])
     .handler(a.handler.function(accountApiFunction)),
 
-  listMyPointTransactions: a
+  listMyPointAwards: a
     .query()
     .arguments({ limit: a.integer(), nextToken: a.string() })
-    .returns(a.ref('PointTransactionPage'))
+    .returns(a.ref('PointAwardPage'))
     .authorization((allow) => [allow.authenticated()])
     .handler(a.handler.function(accountApiFunction)),
 
@@ -731,16 +660,75 @@ const schema = a.schema({
     .authorization((allow) => [allow.authenticated()])
     .handler(a.handler.function(accountApiFunction)),
 
-  getCommunityDashboard: a
+  getMyWeeklyProgressRecap: a
     .query()
-    .returns(a.ref('CommunityDashboardResult'))
+    .returns(a.ref('WeeklyProgressRecapResult'))
     .authorization((allow) => [allow.authenticated()])
     .handler(a.handler.function(accountApiFunction)),
 
-  castMyDailyCharityVote: a
+  setMyUsername: a
     .mutation()
-    .arguments({ charityId: a.id().required() })
-    .returns(a.ref('CommunityVoteResult'))
+    .arguments({ username: a.string().required() })
+    .returns(a.ref('SetUsernameResult'))
+    .authorization((allow) => [allow.authenticated()])
+    .handler(a.handler.function(accountApiFunction)),
+
+  getMySocialProfile: a
+    .query()
+    .returns(a.ref('SocialProfileResult'))
+    .authorization((allow) => [allow.authenticated()])
+    .handler(a.handler.function(accountApiFunction)),
+
+  sendFriendRequest: a
+    .mutation()
+    .arguments({ username: a.string().required() })
+    .returns(a.ref('SendFriendRequestResult'))
+    .authorization((allow) => [allow.authenticated()])
+    .handler(a.handler.function(accountApiFunction)),
+
+  listMyFriendRequests: a
+    .query()
+    .returns(a.ref('FriendRequestPage'))
+    .authorization((allow) => [allow.authenticated()])
+    .handler(a.handler.function(accountApiFunction)),
+
+  acceptFriendRequest: a
+    .mutation()
+    .arguments({ requestId: a.id().required() })
+    .returns(a.ref('AcceptFriendRequestResult'))
+    .authorization((allow) => [allow.authenticated()])
+    .handler(a.handler.function(accountApiFunction)),
+
+  declineFriendRequest: a
+    .mutation()
+    .arguments({ requestId: a.id().required() })
+    .returns(a.ref('FriendRequestResult'))
+    .authorization((allow) => [allow.authenticated()])
+    .handler(a.handler.function(accountApiFunction)),
+
+  cancelFriendRequest: a
+    .mutation()
+    .arguments({ requestId: a.id().required() })
+    .returns(a.ref('FriendRequestResult'))
+    .authorization((allow) => [allow.authenticated()])
+    .handler(a.handler.function(accountApiFunction)),
+
+  listMyFriends: a
+    .query()
+    .returns(a.ref('FriendPage'))
+    .authorization((allow) => [allow.authenticated()])
+    .handler(a.handler.function(accountApiFunction)),
+
+  removeMyFriend: a
+    .mutation()
+    .arguments({ friendId: a.id().required() })
+    .returns(a.ref('RemoveFriendResult'))
+    .authorization((allow) => [allow.authenticated()])
+    .handler(a.handler.function(accountApiFunction)),
+
+  getMyFriendsLeaderboard: a
+    .query()
+    .returns(a.ref('FriendsLeaderboardResult'))
     .authorization((allow) => [allow.authenticated()])
     .handler(a.handler.function(accountApiFunction)),
 
@@ -757,17 +745,6 @@ const schema = a.schema({
     .returns(a.ref('AccountDeletionRequestResult'))
     .authorization((allow) => [allow.authenticated()])
     .handler(a.handler.function(requestAccountDeletionFunction)),
-
-  rerunMonthlySettlement: a
-    .mutation()
-    .arguments({
-      month: a.string().required(),
-      environment: a.enum(['SANDBOX', 'PRODUCTION']),
-      cutoff: a.datetime().required(),
-    })
-    .returns(a.ref('SettlementResult'))
-    .authorization((allow) => [allow.group('ADMINS')])
-    .handler(a.handler.function(monthlySettlementFunction)),
 });
 
 export type Schema = ClientSchema<typeof schema>;

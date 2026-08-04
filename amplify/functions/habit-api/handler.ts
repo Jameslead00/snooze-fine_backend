@@ -1,6 +1,16 @@
 import type { AppSyncIdentity } from 'aws-lambda';
 import { cognitoSub } from '../../shared/appsync.js';
-import { configuredEnvironment } from '../../shared/config.js';
+import {
+  awardConfigurationFromEnvironment,
+  awardPointsForHabit,
+  configuredEnvironment,
+  type AwardConfiguration,
+} from '../../shared/config.js';
+import {
+  DynamoEarnedPointsRepository,
+  earnedPointsTableNamesFromEnvironment,
+} from '../../shared/dynamo-earned-points-repository.js';
+import type { EarnedPointsRepository } from '../../shared/earned-points-repository.js';
 import {
   DynamoHabitRepository,
   habitTableNamesFromEnvironment,
@@ -13,6 +23,7 @@ import {
   reportHabitProgress,
   saveHabit,
 } from '../../shared/habits.js';
+import { defaultHabitStepValue } from '../../shared/habit-types.js';
 import type { HabitRepository } from '../../shared/habit-repository.js';
 import {
   habitIdArgumentsSchema,
@@ -31,16 +42,17 @@ const publicHabit = (habit: Awaited<ReturnType<typeof habitDashboard>>[number]) 
   kind: habit.kind,
   title: habit.title,
   targetValue: habit.targetValue,
+  stepValue: habit.stepValue,
   unit: habit.unit,
   weekdays: habit.weekdays,
   deadlineMinutes: habit.deadlineMinutes,
   timezone: habit.timezone,
-  penaltyPoints: habit.penaltyPoints,
   activeState: habit.activeState,
   scheduledToday: habit.scheduledToday,
   todayProgress: habit.todayProgress,
   todayStatus: habit.todayStatus,
   todayDueAt: habit.todayDueAt,
+  completionAwardPoints: habit.completionAwardPoints,
   createdAt: habit.createdAt,
   updatedAt: habit.updatedAt,
 });
@@ -49,15 +61,25 @@ export async function handleHabitApiEvent(
   event: HabitApiEvent,
   repository: HabitRepository,
   now = new Date().toISOString(),
+  earnedPoints?: EarnedPointsRepository,
+  awards: AwardConfiguration = awardConfigurationFromEnvironment(),
 ): Promise<unknown> {
   const userId = cognitoSub(event.identity);
   switch (event.fieldName) {
     case 'getMyHabits':
-      return (await habitDashboard(repository, userId, now)).map(publicHabit);
+      return (await habitDashboard(repository, userId, now, awards)).map(publicHabit);
     case 'saveMyHabit': {
       const input = saveHabitArgumentsSchema.parse(event.arguments.input);
-      const saved = await saveHabit(repository, { userId, ...input }, now);
-      const view = await habitView(repository, saved, now);
+      const saved = await saveHabit(
+        repository,
+        {
+          userId,
+          ...input,
+          stepValue: input.stepValue ?? defaultHabitStepValue(input.kind),
+        },
+        now,
+      );
+      const view = await habitView(repository, saved, now, awards);
       return publicHabit(view);
     }
     case 'archiveMyHabit': {
@@ -70,8 +92,34 @@ export async function handleHabitApiEvent(
       };
     }
     case 'reportHabitProgress': {
+      if (earnedPoints === undefined) throw new DomainError('EARNED_POINTS_UNAVAILABLE');
       const input = habitProgressArgumentsSchema.parse(event.arguments.input);
-      return reportHabitProgress(repository, { userId, ...input }, now);
+      const result = await reportHabitProgress(repository, { userId, ...input }, now);
+      const habit = result.completed ? await repository.getHabit(userId, input.habitId) : undefined;
+      if (result.completed && habit === undefined) throw new DomainError('HABIT_NOT_FOUND');
+      let earning: { pointsEarned: number; currentPoints: number };
+      if (result.completed) {
+        if (habit === undefined) throw new DomainError('HABIT_NOT_FOUND');
+        earning = await earnedPoints.earnPoints(
+          {
+            userId,
+            qualification: 'HABIT_COMPLETION',
+            sourceEventId: `${input.habitId}:${result.localDate}`,
+            points: awardPointsForHabit(habit.kind, awards),
+          },
+          now,
+        );
+      } else {
+        earning = await earnedPoints.getDisciPointAccount(userId, now).then((account) => ({
+          pointsEarned: 0,
+          currentPoints: account.currentPoints,
+        }));
+      }
+      return {
+        ...result,
+        pointsAwarded: earning.pointsEarned,
+        earnedPointsTotal: earning.currentPoints,
+      };
     }
     default:
       throw new DomainError('UNSUPPORTED_OPERATION');
@@ -83,5 +131,15 @@ export const handler = async (event: HabitApiEvent): Promise<unknown> => {
     habitTableNamesFromEnvironment(),
     configuredEnvironment(),
   );
-  return handleHabitApiEvent(event, repository);
+  const earnedPoints = new DynamoEarnedPointsRepository(
+    earnedPointsTableNamesFromEnvironment(),
+    configuredEnvironment(),
+  );
+  return handleHabitApiEvent(
+    event,
+    repository,
+    new Date().toISOString(),
+    earnedPoints,
+    awardConfigurationFromEnvironment(),
+  );
 };

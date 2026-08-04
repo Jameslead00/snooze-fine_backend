@@ -4,13 +4,13 @@ import {
   GetCommand,
   PutCommand,
   QueryCommand,
-  TransactGetCommand,
   TransactWriteCommand,
   type QueryCommandInput,
 } from '@aws-sdk/lib-dynamodb';
-import { PLATFORM_CONFIG, type RevenueCatEnvironment } from './config.js';
+import type { RevenueCatEnvironment } from './config.js';
 import { DomainError } from './domain.js';
 import type { HabitRepository } from './habit-repository.js';
+import { defaultHabitStepValue } from './habit-types.js';
 import type {
   HabitDefinition,
   HabitOccurrence,
@@ -18,17 +18,11 @@ import type {
   HabitSettlementResult,
   SaveHabitCommand,
 } from './habit-types.js';
-import { sha256 } from './security.js';
-import type { PointAccount, PointPeriod, SubscriptionState } from './types.js';
 
 export interface HabitTableNames {
   habit: string;
   occurrence: string;
   progressEvent: string;
-  subscription: string;
-  period: string;
-  account: string;
-  transaction: string;
 }
 
 const requiredEnvironmentVariable = (name: string): string => {
@@ -42,10 +36,6 @@ export function habitTableNamesFromEnvironment(): HabitTableNames {
     habit: requiredEnvironmentVariable('HABIT_DEFINITION_TABLE_NAME'),
     occurrence: requiredEnvironmentVariable('HABIT_OCCURRENCE_TABLE_NAME'),
     progressEvent: requiredEnvironmentVariable('HABIT_PROGRESS_EVENT_TABLE_NAME'),
-    subscription: requiredEnvironmentVariable('SUBSCRIPTION_TABLE_NAME'),
-    period: requiredEnvironmentVariable('POINT_PERIOD_TABLE_NAME'),
-    account: requiredEnvironmentVariable('POINT_ACCOUNT_TABLE_NAME'),
-    transaction: requiredEnvironmentVariable('POINT_TRANSACTION_TABLE_NAME'),
   };
 }
 
@@ -54,31 +44,35 @@ const isConditionalFailure = (error: unknown): boolean =>
   (error.name === 'TransactionCanceledException' ||
     error.name === 'ConditionalCheckFailedException');
 
-const accountId = (userId: string, environment: RevenueCatEnvironment): string =>
-  `${userId}:${environment}`;
-const subscriptionId = (userId: string, environment: RevenueCatEnvironment): string =>
-  `${userId}:${PLATFORM_CONFIG.entitlementId}:${environment}`;
-
-const asHabit = (item: Record<string, unknown>): HabitDefinition => ({
-  id: String(item.id),
-  userId: String(item.userId),
-  environment: item.environment === 'PRODUCTION' ? 'PRODUCTION' : 'SANDBOX',
-  userEnvironment: String(item.userEnvironment),
-  environmentState: String(item.environmentState),
-  kind: String(item.kind) as HabitDefinition['kind'],
-  title: String(item.title),
-  targetValue: Number(item.targetValue),
-  unit: String(item.unit) as HabitDefinition['unit'],
-  weekdays: Array.isArray(item.weekdays) ? item.weekdays.map(Number) : [],
-  deadlineMinutes: Number(item.deadlineMinutes),
-  timezone: String(item.timezone),
-  penaltyPoints: Number(item.penaltyPoints),
-  startDate: String(item.startDate),
-  activeState: item.activeState === 'ARCHIVED' ? 'ARCHIVED' : 'ACTIVE',
-  version: Number(item.version),
-  createdAt: String(item.createdAt),
-  updatedAt: String(item.updatedAt),
-});
+const asHabit = (item: Record<string, unknown>): HabitDefinition => {
+  const kind = String(item.kind) as HabitDefinition['kind'];
+  const targetValue = Number(item.targetValue);
+  const storedStepValue = Number(item.stepValue);
+  const stepValue =
+    Number.isInteger(storedStepValue) && storedStepValue > 0
+      ? Math.min(storedStepValue, targetValue)
+      : Math.min(defaultHabitStepValue(kind), targetValue);
+  return {
+    id: String(item.id),
+    userId: String(item.userId),
+    environment: item.environment === 'PRODUCTION' ? 'PRODUCTION' : 'SANDBOX',
+    userEnvironment: String(item.userEnvironment),
+    environmentState: String(item.environmentState),
+    kind,
+    title: String(item.title),
+    targetValue,
+    stepValue,
+    unit: String(item.unit) as HabitDefinition['unit'],
+    weekdays: Array.isArray(item.weekdays) ? item.weekdays.map(Number) : [],
+    deadlineMinutes: Number(item.deadlineMinutes),
+    timezone: String(item.timezone),
+    startDate: String(item.startDate),
+    activeState: item.activeState === 'ARCHIVED' ? 'ARCHIVED' : 'ACTIVE',
+    version: Number(item.version),
+    createdAt: String(item.createdAt),
+    updatedAt: String(item.updatedAt),
+  };
+};
 
 const asOccurrence = (item: Record<string, unknown>): HabitOccurrence => ({
   id: String(item.id),
@@ -94,60 +88,11 @@ const asOccurrence = (item: Record<string, unknown>): HabitOccurrence => ({
   status: String(item.status) as HabitOccurrence['status'],
   completedAt: typeof item.completedAt === 'string' ? item.completedAt : undefined,
   missedAt: typeof item.missedAt === 'string' ? item.missedAt : undefined,
-  ledgerTransactionId:
-    typeof item.ledgerTransactionId === 'string' ? item.ledgerTransactionId : undefined,
-  pointsDeducted: Number(item.pointsDeducted),
-  officialBalance: Number(item.officialBalance),
   version: Number(item.version),
   createdAt: String(item.createdAt),
   updatedAt: String(item.updatedAt),
 });
 
-const asAccount = (item: Record<string, unknown>): PointAccount => ({
-  id: String(item.id),
-  userId: String(item.userId),
-  environment: item.environment === 'PRODUCTION' ? 'PRODUCTION' : 'SANDBOX',
-  currentBalance: Number(item.currentBalance),
-  activePeriodId: typeof item.activePeriodId === 'string' ? item.activePeriodId : undefined,
-  lifetimeAllocated: Number(item.lifetimeAllocated),
-  lifetimeDeducted: Number(item.lifetimeDeducted),
-  version: Number(item.version),
-  updatedAt: String(item.updatedAt),
-});
-
-const asPeriod = (item: Record<string, unknown>): PointPeriod => ({
-  id: String(item.id),
-  userId: String(item.userId),
-  entitlementId: String(item.entitlementId),
-  productId: String(item.productId),
-  periodStart: String(item.periodStart),
-  periodEnd: String(item.periodEnd),
-  environment: item.environment === 'PRODUCTION' ? 'PRODUCTION' : 'SANDBOX',
-  initialAllocation: Number(item.initialAllocation),
-  currentRemaining: Number(item.currentRemaining),
-  status: item.status === 'EXPIRED' ? 'EXPIRED' : 'ACTIVE',
-  allocationTransactionId: String(item.allocationTransactionId),
-  createdAt: String(item.createdAt),
-  updatedAt: String(item.updatedAt),
-});
-
-const asSubscription = (item: Record<string, unknown>): SubscriptionState => ({
-  id: String(item.id),
-  userId: String(item.userId),
-  revenueCatAppUserId: String(item.revenueCatAppUserId),
-  entitlementId: String(item.entitlementId),
-  productId: String(item.productId),
-  status: String(item.status) as SubscriptionState['status'],
-  environment: item.environment === 'PRODUCTION' ? 'PRODUCTION' : 'SANDBOX',
-  originalPurchaseAt: String(item.originalPurchaseAt),
-  currentPeriodStart: String(item.currentPeriodStart),
-  currentPeriodEnd: String(item.currentPeriodEnd),
-  autoRenew: typeof item.autoRenew === 'boolean' ? item.autoRenew : undefined,
-  lastRevenueCatEventId: String(item.lastRevenueCatEventId),
-  stateEventAt: String(item.stateEventAt),
-  statusEffectiveAt: String(item.statusEffectiveAt),
-  updatedAt: String(item.updatedAt),
-});
 
 export class DynamoHabitRepository implements HabitRepository {
   private readonly client: DynamoDBDocumentClient;
@@ -185,7 +130,6 @@ export class DynamoHabitRepository implements HabitRepository {
   public async saveHabit(
     command: SaveHabitCommand,
     startDate: string,
-    penaltyPoints: number,
     now: string,
   ): Promise<HabitDefinition> {
     const currentItem = await this.getItem(this.tables.habit, command.habitId);
@@ -202,11 +146,11 @@ export class DynamoHabitRepository implements HabitRepository {
       kind: command.kind,
       title: command.title,
       targetValue: command.targetValue,
+      stepValue: command.stepValue,
       unit: command.unit,
       weekdays: command.weekdays,
       deadlineMinutes: command.deadlineMinutes,
       timezone: command.timezone,
-      penaltyPoints,
       startDate: current?.startDate ?? startDate,
       activeState: 'ACTIVE',
       version: (current?.version ?? 0) + 1,
@@ -273,8 +217,7 @@ export class DynamoHabitRepository implements HabitRepository {
       }
       const stored = await this.getItem(this.tables.occurrence, String(priorEvent.occurrenceId));
       if (stored === undefined) throw new DomainError('PROGRESS_EVENT_INCOMPLETE');
-      const officialBalance = await this.officialBalance(input.command.userId);
-      return this.progressResult(asOccurrence(stored), true, input.now, officialBalance);
+      return this.progressResult(asOccurrence(stored), true, input.now);
     }
 
     const currentItem = await this.getItem(this.tables.occurrence, input.occurrence.id);
@@ -332,8 +275,7 @@ export class DynamoHabitRepository implements HabitRepository {
           ],
         }),
       );
-      const officialBalance = await this.officialBalance(input.command.userId);
-      return this.progressResult(occurrence, false, input.now, officialBalance);
+      return this.progressResult(occurrence, false, input.now);
     } catch (error) {
       if (!isConditionalFailure(error) || attempt >= 4) throw error;
       return this.recordHabitProgressAttempt(input, attempt + 1);
@@ -366,185 +308,29 @@ export class DynamoHabitRepository implements HabitRepository {
       return {
         duplicate: true,
         status: current.status,
-        pointsDeducted: current.pointsDeducted,
-        officialBalance: current.officialBalance,
       };
     }
 
-    const accountKey = accountId(input.habit.userId, this.environment);
-    const subscriptionKey = subscriptionId(input.habit.userId, this.environment);
-    const state = await this.client.send(
-      new TransactGetCommand({
-        TransactItems: [
-          { Get: { TableName: this.tables.account, Key: { id: accountKey } } },
-          { Get: { TableName: this.tables.subscription, Key: { id: subscriptionKey } } },
-        ],
-      }),
-    );
-    const accountItem = state.Responses?.[0]?.Item;
-    const subscriptionItem = state.Responses?.[1]?.Item;
-    const account = accountItem === undefined ? undefined : asAccount(accountItem);
-    const subscription =
-      subscriptionItem === undefined ? undefined : asSubscription(subscriptionItem);
-    const periodItem =
-      account?.activePeriodId === undefined
-        ? undefined
-        : await this.getItem(this.tables.period, account.activePeriodId);
-    const period = periodItem === undefined ? undefined : asPeriod(periodItem);
-    const eligible =
-      account !== undefined &&
-      period !== undefined &&
-      subscription !== undefined &&
-      ['ACTIVE', 'GRACE_PERIOD', 'BILLING_ISSUE', 'CANCELLED_PENDING_EXPIRY'].includes(
-        subscription.status,
-      ) &&
-      subscription.currentPeriodStart <= input.occurrence.dueAt &&
-      subscription.currentPeriodEnd > input.occurrence.dueAt &&
-      period.status === 'ACTIVE' &&
-      period.userId === input.habit.userId &&
-      period.periodStart <= input.occurrence.dueAt &&
-      period.periodEnd > input.occurrence.dueAt;
-
-    if (!eligible || account === undefined || period === undefined) {
-      const skipped: HabitOccurrence = {
-        ...(current ?? input.occurrence),
-        status: 'SKIPPED_INELIGIBLE',
-        missedAt: input.now,
-        officialBalance: account?.currentBalance ?? 0,
-        version: (current?.version ?? 0) + 1,
-        updatedAt: input.now,
-      };
-      try {
-        await this.putOccurrence(skipped, current);
-        return {
-          duplicate: false,
-          status: skipped.status,
-          pointsDeducted: 0,
-          officialBalance: skipped.officialBalance,
-        };
-      } catch (error) {
-        if (!isConditionalFailure(error) || attempt >= 4) throw error;
-        return this.settleMissedHabitAttempt(input, attempt + 1);
-      }
-    }
-
-    const pointsDeducted = Math.min(input.habit.penaltyPoints, account.currentBalance);
-    const officialBalance = account.currentBalance - pointsDeducted;
-    const idempotencyKey = `habit-miss:${input.habit.userId}:${input.occurrence.id}`;
-    const transactionId = sha256(`transaction:${idempotencyKey}`);
-    const missed: HabitOccurrence = {
+    // A missed habit is recorded as a missed habit only. It never changes a
+    // DisciPoint balance; positive earnings are issued solely on completion.
+    const missedWithoutDeduction: HabitOccurrence = {
       ...(current ?? input.occurrence),
       status: 'MISSED',
       missedAt: input.now,
-      ledgerTransactionId: transactionId,
-      pointsDeducted,
-      officialBalance,
       version: (current?.version ?? 0) + 1,
       updatedAt: input.now,
     };
-    const transaction = {
-      id: transactionId,
-      userId: input.habit.userId,
-      environment: this.environment,
-      userEnvironment: input.habit.userEnvironment,
-      pointPeriodId: period.id,
-      amount: -pointsDeducted,
-      transactionType: 'HABIT_DEDUCTION',
-      reasonCode: 'MISSED_HABIT',
-      source: 'ACCOUNTABILITY_ENGINE',
-      idempotencyKey,
-      sourceEventId: input.occurrence.id,
-      relatedEventId: input.habit.id,
-      balanceAfter: officialBalance,
-      createdAt: input.now,
-      metadataJson: {
-        habitKind: input.habit.kind,
-        localDate: input.occurrence.localDate,
-        dueAt: input.occurrence.dueAt,
-      },
-    };
     try {
-      await this.client.send(
-        new TransactWriteCommand({
-          TransactItems: [
-            {
-              Put: {
-                TableName: this.tables.occurrence,
-                Item: missed,
-                ConditionExpression:
-                  current === undefined
-                    ? 'attribute_not_exists(id)'
-                    : '#version = :occurrenceVersion AND #status = :pending',
-                ExpressionAttributeNames:
-                  current === undefined
-                    ? undefined
-                    : { '#version': 'version', '#status': 'status' },
-                ExpressionAttributeValues:
-                  current === undefined
-                    ? undefined
-                    : { ':occurrenceVersion': current.version, ':pending': 'PENDING' },
-              },
-            },
-            {
-              Put: {
-                TableName: this.tables.transaction,
-                Item: transaction,
-                ConditionExpression: 'attribute_not_exists(id)',
-              },
-            },
-            {
-              Update: {
-                TableName: this.tables.account,
-                Key: { id: account.id },
-                UpdateExpression:
-                  'SET currentBalance = :balance, lifetimeDeducted = lifetimeDeducted + :deducted, #version = #version + :one, updatedAt = :now',
-                ConditionExpression: '#version = :version AND activePeriodId = :periodId',
-                ExpressionAttributeNames: { '#version': 'version' },
-                ExpressionAttributeValues: {
-                  ':balance': officialBalance,
-                  ':deducted': pointsDeducted,
-                  ':one': 1,
-                  ':now': input.now,
-                  ':version': account.version,
-                  ':periodId': period.id,
-                },
-              },
-            },
-            {
-              Update: {
-                TableName: this.tables.period,
-                Key: { id: period.id },
-                UpdateExpression: 'SET currentRemaining = :balance, updatedAt = :now',
-                ConditionExpression:
-                  '#status = :active AND currentRemaining = :previousBalance AND periodEnd > :dueAt',
-                ExpressionAttributeNames: { '#status': 'status' },
-                ExpressionAttributeValues: {
-                  ':balance': officialBalance,
-                  ':now': input.now,
-                  ':active': 'ACTIVE',
-                  ':previousBalance': account.currentBalance,
-                  ':dueAt': input.occurrence.dueAt,
-                },
-              },
-            },
-          ],
-        }),
-      );
+      await this.putOccurrence(missedWithoutDeduction, current);
       return {
         duplicate: false,
-        status: missed.status,
-        pointsDeducted,
-        officialBalance,
+        status: 'MISSED',
       };
     } catch (error) {
       if (!isConditionalFailure(error) || attempt >= 4) throw error;
       return this.settleMissedHabitAttempt(input, attempt + 1);
     }
-  }
 
-  public async officialBalance(userId: string): Promise<number> {
-    const item = await this.getItem(this.tables.account, accountId(userId, this.environment));
-    return item === undefined ? 0 : Number(item.currentBalance);
   }
 
   public async listOccurrences(userId: string, localDate: string): Promise<HabitOccurrence[]> {
@@ -563,7 +349,6 @@ export class DynamoHabitRepository implements HabitRepository {
     occurrence: HabitOccurrence,
     duplicate: boolean,
     now: string,
-    officialBalance: number,
   ): HabitProgressResult {
     return {
       accepted: true,
@@ -573,7 +358,6 @@ export class DynamoHabitRepository implements HabitRepository {
       progressValue: occurrence.progressValue,
       targetValue: occurrence.targetValue,
       status: occurrence.status,
-      officialBalance,
       serverTimestamp: now,
     };
   }
