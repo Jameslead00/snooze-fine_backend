@@ -576,21 +576,20 @@ export class DynamoSocialRepository implements SocialRepository {
 
   private async monthlyEarnedPoints(userId: string, start: string, end: string): Promise<number> {
     if (userId.length === 0) return 0;
+    // The index sort key can only appear once in KeyConditionExpression, and
+    // DynamoDB does not allow it in FilterExpression either. Use an inclusive
+    // upper bound one millisecond before the next month instead.
+    const endInclusive = new Date(new Date(end).getTime() - 1).toISOString();
     const response = await this.client.send(
       new QueryCommand({
         TableName: this.tables.pointEvent,
         IndexName: 'byUserEnvironmentAndCreatedAt',
-        // DynamoDB permits only one condition on a sort key in a
-        // KeyConditionExpression. Use one inclusive range, then keep the
-        // month boundary strict with a filter for the exact next-month instant.
         KeyConditionExpression:
-          'userEnvironment = :userEnvironment AND createdAt BETWEEN :start AND :end',
-        FilterExpression: 'createdAt < :endExclusive',
+          'userEnvironment = :userEnvironment AND createdAt BETWEEN :start AND :endInclusive',
         ExpressionAttributeValues: {
           ':userEnvironment': userEnvironment(userId, this.environment),
           ':start': start,
-          ':end': end,
-          ':endExclusive': end,
+          ':endInclusive': endInclusive,
         },
       }),
     );
