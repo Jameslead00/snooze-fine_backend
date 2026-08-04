@@ -1,5 +1,5 @@
 import type { AppSyncIdentityCognito } from 'aws-lambda';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   handleAccountApiEvent,
   type AccountApiEvent,
@@ -52,6 +52,10 @@ const event = (fieldName: string, arguments_: Record<string, unknown> = {}): Acc
   source: null,
   request: {},
   prev: null,
+});
+
+afterEach(() => {
+  vi.unstubAllEnvs();
 });
 
 describe('earned-point account API', () => {
@@ -122,6 +126,41 @@ describe('earned-point account API', () => {
       isEligible: false,
       subscriptionStatus: 'EXPIRED',
     });
+  });
+
+  it('can use an isolated sandbox subscription for TestFlight in production', async () => {
+    vi.stubEnv('SNOOZEFINE_ENVIRONMENT', 'PRODUCTION');
+    vi.stubEnv('SNOOZEFINE_ALLOW_TESTFLIGHT_SANDBOX_SUBSCRIPTIONS', 'true');
+    const subject = repository();
+    const sandboxSubscription: SubscriptionState = {
+      id: `${userId}:snoozefine_plus:SANDBOX`,
+      userId,
+      revenueCatAppUserId: userId,
+      entitlementId: 'snoozefine_plus',
+      productId: 'snoozefine_plus_monthly',
+      status: 'ACTIVE',
+      environment: 'SANDBOX',
+      originalPurchaseAt: '2026-07-01T00:00:00.000Z',
+      currentPeriodStart: '2026-07-31T00:00:00.000Z',
+      currentPeriodEnd: '2026-08-31T00:00:00.000Z',
+      autoRenew: true,
+      lastRevenueCatEventId: 'event-testflight',
+      stateEventAt: now,
+      statusEffectiveAt: now,
+      updatedAt: now,
+    };
+    vi.mocked(subject.getSubscriptionState).mockImplementation(async (_userId, environment) =>
+      environment === 'SANDBOX' ? sandboxSubscription : undefined,
+    );
+
+    await expect(
+      handleAccountApiEvent(event('getMyEarnedPointAccount'), subject, now),
+    ).resolves.toMatchObject({
+      isEligible: true,
+      subscriptionStatus: 'ACTIVE',
+    });
+    expect(subject.getSubscriptionState).toHaveBeenCalledWith(userId, 'PRODUCTION');
+    expect(subject.getSubscriptionState).toHaveBeenCalledWith(userId, 'SANDBOX');
   });
 
   it('lists immutable point awards', async () => {

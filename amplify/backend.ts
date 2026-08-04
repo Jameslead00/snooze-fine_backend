@@ -130,6 +130,13 @@ platformTables.userProfile.grantReadWriteData(functions.link.resources.lambda);
 platformTables.customerLink.grantReadWriteData(functions.link.resources.lambda);
 
 platformTables.subscription.grantReadData(functions.account.resources.lambda);
+// The entitlement lookup uses the secondary index; grant its ARN explicitly.
+functions.account.resources.lambda.addToRolePolicy(
+  new PolicyStatement({
+    actions: ['dynamodb:Query'],
+    resources: [`${platformTables.subscription.tableArn}/index/byUserAndEnvironment`],
+  }),
+);
 // Account API owns username setup as well as social-profile reads. Username
 // reservation is atomic, but the companion profile write must be authorized.
 platformTables.userProfile.grantReadWriteData(functions.account.resources.lambda);
