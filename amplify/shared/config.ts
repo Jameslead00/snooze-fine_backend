@@ -2,10 +2,104 @@ export const PLATFORM_CONFIG = {
   entitlementId: 'snoozefine_plus',
   monthlyProductId: 'snoozefine_plus_monthly',
   habitSettlementLookbackDays: 35,
-  wakeCompletionPointEarned: 25,
-  habitCompletionPointEarned: 10,
   webhookMaxPayloadBytes: 256 * 1024,
 } as const;
+
+export type SupportedHabitKind = 'WATER' | 'READING' | 'MEDITATION' | 'BED' | 'CUSTOM';
+
+export interface AwardConfiguration {
+  wakeCompletion: number;
+  habits: Record<SupportedHabitKind, number>;
+}
+
+const DEFAULT_AWARDS: AwardConfiguration = {
+  wakeCompletion: 25,
+  habits: {
+    WATER: 10,
+    READING: 10,
+    MEDITATION: 10,
+    BED: 10,
+    // Legacy custom habits are not creatable by the current API, but their
+    // historical completion still receives the safe default award.
+    CUSTOM: 10,
+  },
+};
+
+const awardEnvironmentNames: Record<'wakeCompletion' | SupportedHabitKind, string> = {
+  wakeCompletion: 'SNOOZEFINE_AWARD_WAKE_COMPLETION',
+  WATER: 'SNOOZEFINE_AWARD_HABIT_WATER',
+  READING: 'SNOOZEFINE_AWARD_HABIT_READING',
+  MEDITATION: 'SNOOZEFINE_AWARD_HABIT_MEDITATION',
+  BED: 'SNOOZEFINE_AWARD_HABIT_BED',
+  CUSTOM: 'SNOOZEFINE_AWARD_HABIT_CUSTOM',
+};
+
+/**
+ * Read award amounts at Lambda start from the deployment environment. Values
+ * may be zero (to disable an award) but can never be negative or unbounded.
+ * This is the only server-side source of earning amounts.
+ */
+export function awardConfigurationFromEnvironment(
+  environment: NodeJS.ProcessEnv = process.env,
+): AwardConfiguration {
+  const parse = (key: keyof typeof awardEnvironmentNames, fallback: number): number => {
+    const value = environment[awardEnvironmentNames[key]];
+    if (value === undefined || value.length === 0) return fallback;
+    if (!/^\d+$/.test(value))
+      throw new Error(`${awardEnvironmentNames[key]} must be a nonnegative integer`);
+    const amount = Number(value);
+    if (!Number.isSafeInteger(amount) || amount > 10_000) {
+      throw new Error(`${awardEnvironmentNames[key]} must be between 0 and 10000`);
+    }
+    return amount;
+  };
+  return {
+    wakeCompletion: parse('wakeCompletion', DEFAULT_AWARDS.wakeCompletion),
+    habits: {
+      WATER: parse('WATER', DEFAULT_AWARDS.habits.WATER),
+      READING: parse('READING', DEFAULT_AWARDS.habits.READING),
+      MEDITATION: parse('MEDITATION', DEFAULT_AWARDS.habits.MEDITATION),
+      BED: parse('BED', DEFAULT_AWARDS.habits.BED),
+      CUSTOM: parse('CUSTOM', DEFAULT_AWARDS.habits.CUSTOM),
+    },
+  };
+}
+
+export function awardPointsForHabit(kind: SupportedHabitKind, awards: AwardConfiguration): number {
+  return awards.habits[kind] ?? awards.habits.CUSTOM;
+}
+
+export const awardEnvironmentDefaults = (): Record<string, string> => ({
+  [awardEnvironmentNames.wakeCompletion]: String(DEFAULT_AWARDS.wakeCompletion),
+  [awardEnvironmentNames.WATER]: String(DEFAULT_AWARDS.habits.WATER),
+  [awardEnvironmentNames.READING]: String(DEFAULT_AWARDS.habits.READING),
+  [awardEnvironmentNames.MEDITATION]: String(DEFAULT_AWARDS.habits.MEDITATION),
+  [awardEnvironmentNames.BED]: String(DEFAULT_AWARDS.habits.BED),
+  [awardEnvironmentNames.CUSTOM]: String(DEFAULT_AWARDS.habits.CUSTOM),
+});
+
+export interface SocialConfiguration {
+  maxActiveOutgoingRequests: number;
+}
+
+export function socialConfigurationFromEnvironment(
+  environment: NodeJS.ProcessEnv = process.env,
+): SocialConfiguration {
+  const raw = environment.SNOOZEFINE_MAX_ACTIVE_OUTGOING_FRIEND_REQUESTS;
+  if (raw === undefined || raw.length === 0) return { maxActiveOutgoingRequests: 20 };
+  if (!/^\d+$/.test(raw)) {
+    throw new Error('SNOOZEFINE_MAX_ACTIVE_OUTGOING_FRIEND_REQUESTS must be an integer');
+  }
+  const value = Number(raw);
+  if (!Number.isSafeInteger(value) || value < 1 || value > 100) {
+    throw new Error('SNOOZEFINE_MAX_ACTIVE_OUTGOING_FRIEND_REQUESTS must be between 1 and 100');
+  }
+  return { maxActiveOutgoingRequests: value };
+}
+
+export const socialEnvironmentDefaults = (): Record<string, string> => ({
+  SNOOZEFINE_MAX_ACTIVE_OUTGOING_FRIEND_REQUESTS: '20',
+});
 
 export type RevenueCatEnvironment = 'SANDBOX' | 'PRODUCTION';
 

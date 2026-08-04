@@ -10,6 +10,7 @@ const schema = a.schema({
       userId: a.id().required(),
       email: a.email(),
       displayName: a.string(),
+      username: a.string(),
       creatorCode: a.string(),
       timezone: a.string().required(),
     })
@@ -119,7 +120,6 @@ const schema = a.schema({
       index('userEnvironment').sortKeys(['createdAt']).name('byUserEnvironmentAndCreatedAt'),
     ])
     .authorization((allow) => [allow.group('ADMINS').to(['read'])]),
-
 
   SyncedAlarm: a
     .model({
@@ -258,88 +258,56 @@ const schema = a.schema({
     ])
     .authorization((allow) => [allow.group('ADMINS').to(['read'])]),
 
-  Charity: a
-    .model({
-      id: a.id().required(),
-      name: a.string().required(),
-      summary: a.string().required(),
-      websiteUrl: a.url(),
-      impactLabel: a.string(),
-      active: a.boolean().required(),
-      activeState: a.string().required(),
-      sortOrder: a.integer().required(),
-      updatedAt: a.datetime().required(),
-    })
-    .secondaryIndexes((index) => [
-      index('activeState').sortKeys(['sortOrder']).name('byActiveStateAndSortOrder'),
-    ])
-    .authorization((allow) => [allow.group('ADMINS').to(['read'])]),
-
-  CommunityBallot: a
-    .model({
-      id: a.id().required(),
-      month: a.string().required(),
-      environment: a.enum(['SANDBOX', 'PRODUCTION']),
-      environmentStatus: a.string().required(),
-      status: a.enum(['OPEN', 'CLOSED']),
-      opensAt: a.datetime().required(),
-      closesAt: a.datetime().required(),
-      charityIds: a.string().array().required(),
-      tallies: a.json().required(),
-      totalVotes: a.integer().required(),
-      winnerCharityId: a.id(),
-      companyContributionId: a.id(),
-      totalAllocatedPoints: a.integer(),
-      version: a.integer().required(),
-      updatedAt: a.datetime().required(),
-    })
-    .secondaryIndexes((index) => [
-      index('environmentStatus').sortKeys(['closesAt']).name('byEnvironmentStatusAndClosesAt'),
-    ])
-    .authorization((allow) => [allow.group('ADMINS').to(['read'])]),
-
-  CharityBallotAllocation: a
+  // A normalized username is atomically reserved by this id-keyed record.
+  UsernameReservation: a
     .model({
       id: a.id().required(),
       userId: a.id().required(),
+      createdAt: a.datetime().required(),
+    })
+    .authorization((allow) => [allow.group('ADMINS').to(['read'])]),
+
+  FriendRequest: a
+    .model({
+      id: a.id().required(),
+      requesterUserId: a.id().required(),
+      recipientUserId: a.id().required(),
+      requesterUsername: a.string().required(),
+      requesterDisplayName: a.string().required(),
+      recipientUsername: a.string().required(),
+      recipientDisplayName: a.string().required(),
       environment: a.enum(['SANDBOX', 'PRODUCTION']),
-      userEnvironmentBallot: a.string().required(),
-      ballotId: a.id().required(),
-      charityId: a.id().required(),
-      pointsAllocated: a.integer().required(),
-      version: a.integer().required(),
+      requesterEnvironment: a.string().required(),
+      recipientEnvironment: a.string().required(),
+      status: a.enum(['PENDING', 'ACCEPTED', 'DECLINED', 'CANCELLED']),
+      acceptedAt: a.datetime(),
       createdAt: a.datetime().required(),
       updatedAt: a.datetime().required(),
     })
     .secondaryIndexes((index) => [
-      index('userEnvironmentBallot').sortKeys(['updatedAt']).name('byUserEnvironmentBallot'),
-      index('ballotId').sortKeys(['updatedAt']).name('byBallotAndUpdatedAt'),
+      index('requesterEnvironment')
+        .sortKeys(['updatedAt'])
+        .name('byRequesterEnvironmentAndUpdatedAt'),
+      index('recipientEnvironment')
+        .sortKeys(['updatedAt'])
+        .name('byRecipientEnvironmentAndUpdatedAt'),
     ])
     .authorization((allow) => [allow.group('ADMINS').to(['read'])]),
 
-  CompanyContribution: a
+  // Each accepted friendship is stored twice, once for each participant.
+  FriendConnection: a
     .model({
       id: a.id().required(),
-      ballotId: a.id().required(),
-      month: a.string().required(),
+      userId: a.id().required(),
+      friendUserId: a.id().required(),
       environment: a.enum(['SANDBOX', 'PRODUCTION']),
-      charityId: a.id().required(),
-      commitmentType: a.enum(['FIXED', 'CAPPED']),
-      currency: a.string().required(),
-      maximumAmountMinor: a.integer().required(),
-      approvedAmountMinor: a.integer(),
-      paidAmountMinor: a.integer(),
-      status: a.enum(['PLANNED', 'APPROVED', 'PAID', 'EVIDENCED', 'VOID']),
-      paidAt: a.datetime(),
-      evidenceUrl: a.url(),
-      ownerNote: a.string(),
-      updatedAt: a.datetime().required(),
+      userEnvironment: a.string().required(),
+      createdAt: a.datetime().required(),
     })
     .secondaryIndexes((index) => [
-      index('environment').sortKeys(['month']).name('byEnvironmentAndMonth'),
+      index('userEnvironment').sortKeys(['createdAt']).name('byUserEnvironmentAndCreatedAt'),
     ])
     .authorization((allow) => [allow.group('ADMINS').to(['read'])]),
-
 
   AccountDeletionRequest: a
     .model({
@@ -360,9 +328,6 @@ const schema = a.schema({
   EarnedPointAccountResult: a.customType({
     isEligible: a.boolean().required(),
     earnedPointsTotal: a.integer().required(),
-    activeBallotId: a.id(),
-    activeBallotEarnedPoints: a.integer().required(),
-    activeBallotAllocatedVotes: a.integer().required(),
     subscriptionStatus: a.string().required(),
     serverTimestamp: a.datetime().required(),
   }),
@@ -375,7 +340,6 @@ const schema = a.schema({
     sourceEventId: a.string().required(),
     relatedEventId: a.string(),
     earnedPointsTotalAfter: a.integer().required(),
-    ballotId: a.id(),
     createdAt: a.datetime().required(),
   }),
   PointAwardPage: a.customType({
@@ -494,7 +458,6 @@ const schema = a.schema({
     allTimeWakeUps: a.integer().required(),
     allTimeNoSnoozeMornings: a.integer().required(),
     earnedPointsTotal: a.integer().required(),
-    activeBallotEarnedPoints: a.integer().required(),
     timezone: a.string().required(),
     serverTimestamp: a.datetime().required(),
   }),
@@ -522,49 +485,71 @@ const schema = a.schema({
     noSnoozeMornings: a.integer().required(),
     serverTimestamp: a.datetime().required(),
   }),
-  CommunityCharityResult: a.customType({
-    id: a.id().required(),
-    name: a.string().required(),
-    summary: a.string().required(),
-    websiteUrl: a.url(),
-    impactLabel: a.string(),
-    votes: a.integer().required(),
-    votePercentage: a.float().required(),
-    myAllocatedVotes: a.integer().required(),
-  }),
-  CommunityDashboardResult: a.customType({
-    ballotId: a.id(),
-    month: a.string(),
-    status: a.string().required(),
-    opensAt: a.datetime(),
-    closesAt: a.datetime(),
-    charities: a.ref('CommunityCharityResult').array().required(),
-    totalVotes: a.integer().required(),
-    earnedVotes: a.integer().required(),
-    allocatedVotes: a.integer().required(),
-    availableVotes: a.integer().required(),
-    canAllocateVotes: a.boolean().required(),
-    contributionStatus: a.string(),
-    winnerCharityId: a.id(),
-    evidenceUrl: a.url(),
+  SocialProfileResult: a.customType({
+    usernameRequired: a.boolean().required(),
+    username: a.string(),
+    displayName: a.string().required(),
     serverTimestamp: a.datetime().required(),
   }),
-  CommunityVoteResult: a.customType({
+  SetUsernameResult: a.customType({
+    username: a.string().required(),
+    duplicate: a.boolean().required(),
+    serverTimestamp: a.datetime().required(),
+  }),
+  FriendRequestResult: a.customType({
+    requestId: a.id().required(),
+    status: a.string().required(),
+    direction: a.string().required(),
+    counterpartUsername: a.string().required(),
+    counterpartDisplayName: a.string().required(),
+    createdAt: a.datetime().required(),
+    updatedAt: a.datetime().required(),
+    serverTimestamp: a.datetime().required(),
+  }),
+  FriendRequestPage: a.customType({
+    incoming: a.ref('FriendRequestResult').array().required(),
+    outgoing: a.ref('FriendRequestResult').array().required(),
+    serverTimestamp: a.datetime().required(),
+  }),
+  SendFriendRequestResult: a.customType({
+    sent: a.boolean().required(),
+    request: a.ref('FriendRequestResult'),
+    duplicate: a.boolean().required(),
+    serverTimestamp: a.datetime().required(),
+  }),
+  FriendResult: a.customType({
+    friendId: a.id().required(),
+    username: a.string().required(),
+    displayName: a.string().required(),
+    friendsSince: a.datetime().required(),
+  }),
+  FriendPage: a.customType({
+    items: a.ref('FriendResult').array().required(),
+  }),
+  AcceptFriendRequestResult: a.customType({
     accepted: a.boolean().required(),
     duplicate: a.boolean().required(),
-    ballotId: a.id().required(),
-    charityId: a.id().required(),
-    charityAllocatedVotes: a.integer().required(),
-    allocatedVotes: a.integer().required(),
-    availableVotes: a.integer().required(),
-    totalVotes: a.integer().required(),
+    friend: a.ref('FriendResult').required(),
     serverTimestamp: a.datetime().required(),
   }),
-  AllocateCharityVotesInput: a.customType({
-    allocationEventId: a.id().required(),
-    ballotId: a.id().required(),
-    charityId: a.id().required(),
-    allocatedVotes: a.integer().required(),
+  RemoveFriendResult: a.customType({
+    removed: a.boolean().required(),
+    serverTimestamp: a.datetime().required(),
+  }),
+  FriendLeaderboardEntry: a.customType({
+    friendId: a.id(),
+    username: a.string().required(),
+    displayName: a.string().required(),
+    currentMonthPoints: a.integer().required(),
+    rank: a.integer().required(),
+    isCurrentUser: a.boolean().required(),
+  }),
+  FriendsLeaderboardResult: a.customType({
+    period: a.string().required(),
+    periodStart: a.datetime().required(),
+    periodEnd: a.datetime().required(),
+    entries: a.ref('FriendLeaderboardEntry').array().required(),
+    serverTimestamp: a.datetime().required(),
   }),
   AccountDeletionRequestResult: a.customType({
     accepted: a.boolean().required(),
@@ -681,16 +666,69 @@ const schema = a.schema({
     .authorization((allow) => [allow.authenticated()])
     .handler(a.handler.function(accountApiFunction)),
 
-  getCommunityDashboard: a
-    .query()
-    .returns(a.ref('CommunityDashboardResult'))
+  setMyUsername: a
+    .mutation()
+    .arguments({ username: a.string().required() })
+    .returns(a.ref('SetUsernameResult'))
     .authorization((allow) => [allow.authenticated()])
     .handler(a.handler.function(accountApiFunction)),
 
-  allocateMyCharityVotes: a
+  getMySocialProfile: a
+    .query()
+    .returns(a.ref('SocialProfileResult'))
+    .authorization((allow) => [allow.authenticated()])
+    .handler(a.handler.function(accountApiFunction)),
+
+  sendFriendRequest: a
     .mutation()
-    .arguments({ input: a.ref('AllocateCharityVotesInput').required() })
-    .returns(a.ref('CommunityVoteResult'))
+    .arguments({ username: a.string().required() })
+    .returns(a.ref('SendFriendRequestResult'))
+    .authorization((allow) => [allow.authenticated()])
+    .handler(a.handler.function(accountApiFunction)),
+
+  listMyFriendRequests: a
+    .query()
+    .returns(a.ref('FriendRequestPage'))
+    .authorization((allow) => [allow.authenticated()])
+    .handler(a.handler.function(accountApiFunction)),
+
+  acceptFriendRequest: a
+    .mutation()
+    .arguments({ requestId: a.id().required() })
+    .returns(a.ref('AcceptFriendRequestResult'))
+    .authorization((allow) => [allow.authenticated()])
+    .handler(a.handler.function(accountApiFunction)),
+
+  declineFriendRequest: a
+    .mutation()
+    .arguments({ requestId: a.id().required() })
+    .returns(a.ref('FriendRequestResult'))
+    .authorization((allow) => [allow.authenticated()])
+    .handler(a.handler.function(accountApiFunction)),
+
+  cancelFriendRequest: a
+    .mutation()
+    .arguments({ requestId: a.id().required() })
+    .returns(a.ref('FriendRequestResult'))
+    .authorization((allow) => [allow.authenticated()])
+    .handler(a.handler.function(accountApiFunction)),
+
+  listMyFriends: a
+    .query()
+    .returns(a.ref('FriendPage'))
+    .authorization((allow) => [allow.authenticated()])
+    .handler(a.handler.function(accountApiFunction)),
+
+  removeMyFriend: a
+    .mutation()
+    .arguments({ friendId: a.id().required() })
+    .returns(a.ref('RemoveFriendResult'))
+    .authorization((allow) => [allow.authenticated()])
+    .handler(a.handler.function(accountApiFunction)),
+
+  getMyFriendsLeaderboard: a
+    .query()
+    .returns(a.ref('FriendsLeaderboardResult'))
     .authorization((allow) => [allow.authenticated()])
     .handler(a.handler.function(accountApiFunction)),
 
@@ -707,7 +745,6 @@ const schema = a.schema({
     .returns(a.ref('AccountDeletionRequestResult'))
     .authorization((allow) => [allow.authenticated()])
     .handler(a.handler.function(requestAccountDeletionFunction)),
-
 });
 
 export type Schema = ClientSchema<typeof schema>;

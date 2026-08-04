@@ -19,25 +19,49 @@ const identity: AppSyncIdentityCognito = {
 };
 
 const repository = (): AccountApiRepository => ({
-  getDisciPointAccount: vi.fn().mockResolvedValue({ currentPoints: 25, lifetimeEarned: 25, serverTimestamp: now }),
+  getDisciPointAccount: vi
+    .fn()
+    .mockResolvedValue({ currentPoints: 25, lifetimeEarned: 25, serverTimestamp: now }),
   earnPoints: vi.fn(),
   listPointAwards: vi.fn().mockResolvedValue({ items: [], nextToken: undefined }),
-  listAlarms: vi.fn(), saveAlarm: vi.fn(), archiveAlarm: vi.fn(), recordWake: vi.fn(),
-  statistics: vi.fn(), weeklyProgressRecap: vi.fn(), dashboard: vi.fn(), allocatePoints: vi.fn(),
+  listAlarms: vi.fn(),
+  saveAlarm: vi.fn(),
+  archiveAlarm: vi.fn(),
+  recordWake: vi.fn(),
+  statistics: vi.fn(),
+  weeklyProgressRecap: vi.fn(),
+  socialProfile: vi.fn().mockResolvedValue({ usernameRequired: false, username: 'tester' }),
+  setUsername: vi.fn(),
+  sendFriendRequest: vi.fn(),
+  listFriendRequests: vi.fn(),
+  acceptFriendRequest: vi.fn(),
+  declineFriendRequest: vi.fn(),
+  cancelFriendRequest: vi.fn(),
+  listFriends: vi.fn(),
+  removeFriend: vi.fn(),
+  friendsLeaderboard: vi.fn(),
   recordEngagement: vi.fn(),
 });
 
 const event = (fieldName: string, arguments_: Record<string, unknown> = {}): AccountApiEvent => ({
-  fieldName, arguments: arguments_, identity, source: null, request: {}, prev: null,
+  fieldName,
+  arguments: arguments_,
+  identity,
+  source: null,
+  request: {},
+  prev: null,
 });
 
 describe('earned-point account API', () => {
   it('returns only the earned-point account fields', async () => {
     const subject = repository();
-    await expect(handleAccountApiEvent(event('getMyEarnedPointAccount'), subject, now)).resolves.toEqual({
-      isEligible: true, earnedPointsTotal: 25, activeBallotId: undefined,
-      activeBallotEarnedPoints: 0, activeBallotAllocatedVotes: 0,
-      subscriptionStatus: 'ACTIVE', serverTimestamp: now,
+    await expect(
+      handleAccountApiEvent(event('getMyEarnedPointAccount'), subject, now),
+    ).resolves.toEqual({
+      isEligible: true,
+      earnedPointsTotal: 25,
+      subscriptionStatus: 'ACTIVE',
+      serverTimestamp: now,
     });
   });
 

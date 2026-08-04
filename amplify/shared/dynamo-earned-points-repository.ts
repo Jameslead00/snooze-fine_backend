@@ -43,7 +43,9 @@ const accountId = (userId: string, environment: RevenueCatEnvironment): string =
   userEnvironment(userId, environment);
 
 const eventId = (command: EarnPointsCommand, environment: RevenueCatEnvironment): string =>
-  sha256(`discipoint-earn:${userEnvironment(command.userId, environment)}:${command.qualification}:${command.sourceEventId}`);
+  sha256(
+    `discipoint-earn:${userEnvironment(command.userId, environment)}:${command.qualification}:${command.sourceEventId}`,
+  );
 
 const asAccount = (item: Record<string, unknown>): DisciPointAccount => ({
   id: String(item.id),
@@ -71,11 +73,12 @@ const asEarnEvent = (item: Record<string, unknown>): DisciPointEarnEvent => ({
 
 const isConditionalFailure = (error: unknown): boolean =>
   error instanceof Error &&
-  (error.name === 'TransactionCanceledException' || error.name === 'ConditionalCheckFailedException');
+  (error.name === 'TransactionCanceledException' ||
+    error.name === 'ConditionalCheckFailedException');
 
 /**
  * The earned-points ledger is intentionally independent of subscriptions,
- * snoozes, missed habits, ballots, and company contributions.  A source event
+ * snoozes, missed habits, friend requests, or other social actions. A source event
  * can earn once; no operation in this repository subtracts points.
  */
 export class DynamoEarnedPointsRepository implements EarnedPointsRepository {
@@ -93,10 +96,7 @@ export class DynamoEarnedPointsRepository implements EarnedPointsRepository {
       });
   }
 
-  public async getDisciPointAccount(
-    userId: string,
-    now: string,
-  ): Promise<DisciPointAccountView> {
+  public async getDisciPointAccount(userId: string, now: string): Promise<DisciPointAccountView> {
     const item = await this.item(this.tables.account, accountId(userId, this.environment));
     const account = item === undefined ? undefined : asAccount(item);
     return {
@@ -207,7 +207,10 @@ export class DynamoEarnedPointsRepository implements EarnedPointsRepository {
     const exclusiveStartKey =
       nextToken === undefined
         ? undefined
-        : (JSON.parse(Buffer.from(nextToken, 'base64url').toString('utf8')) as Record<string, unknown>);
+        : (JSON.parse(Buffer.from(nextToken, 'base64url').toString('utf8')) as Record<
+            string,
+            unknown
+          >);
     const response = await this.client.send(
       new QueryCommand({
         TableName: this.tables.earnEvent,
@@ -231,7 +234,6 @@ export class DynamoEarnedPointsRepository implements EarnedPointsRepository {
           sourceEventId: event.sourceEventId,
           relatedEventId: undefined,
           earnedPointsTotalAfter: event.pointsAfter,
-          ballotId: undefined,
           createdAt: event.createdAt,
         };
       }),

@@ -1,5 +1,6 @@
 import { DomainError } from './domain.js';
-import { PLATFORM_CONFIG } from './config.js';
+import { awardPointsForHabit, type AwardConfiguration } from './config.js';
+import { awardConfigurationFromEnvironment } from './config.js';
 import type { HabitRepository } from './habit-repository.js';
 import type {
   HabitDefinition,
@@ -114,7 +115,11 @@ export function isScheduled(habit: HabitDefinition, localDate: string): boolean 
   return habit.weekdays.includes(localParts(midday, habit.timezone).weekday);
 }
 
-export function occurrenceFor(habit: HabitDefinition, localDate: string, now: string): HabitOccurrence {
+export function occurrenceFor(
+  habit: HabitDefinition,
+  localDate: string,
+  now: string,
+): HabitOccurrence {
   return {
     id: sha256(`habit-occurrence:${habit.userId}:${habit.id}:${localDate}`),
     userId: habit.userId,
@@ -199,6 +204,7 @@ export async function habitDashboard(
   repository: HabitRepository,
   userId: string,
   now = new Date().toISOString(),
+  awards: AwardConfiguration = awardConfigurationFromEnvironment(),
 ): Promise<HabitView[]> {
   const habits = (await repository.listHabits(userId)).filter(
     (habit) => habit.activeState === 'ACTIVE',
@@ -213,6 +219,7 @@ export async function habitDashboard(
       habit,
       localParts(now, habit.timezone).date,
       occurrenceByHabit.get(habit.id),
+      awards,
     ),
   );
 }
@@ -226,6 +233,7 @@ export function habitViewFromOccurrence(
   habit: HabitDefinition,
   localDate: string,
   occurrence: HabitOccurrence | undefined,
+  awards: AwardConfiguration,
 ): HabitView {
   const scheduledToday = isScheduled(habit, localDate);
   return {
@@ -236,7 +244,7 @@ export function habitViewFromOccurrence(
     todayDueAt: scheduledToday
       ? (occurrence?.dueAt ?? localDeadlineUtc(localDate, habit.deadlineMinutes, habit.timezone))
       : undefined,
-    completionAwardPoints: PLATFORM_CONFIG.habitCompletionPointEarned,
+    completionAwardPoints: awardPointsForHabit(habit.kind, awards),
   };
 }
 
@@ -244,12 +252,13 @@ export async function habitView(
   repository: HabitRepository,
   habit: HabitDefinition,
   now = new Date().toISOString(),
+  awards: AwardConfiguration = awardConfigurationFromEnvironment(),
 ): Promise<HabitView> {
   const localDate = localParts(now, habit.timezone).date;
   const occurrence = (await repository.listOccurrences(habit.userId, localDate)).find(
     (item) => item.habitId === habit.id,
   );
-  return habitViewFromOccurrence(habit, localDate, occurrence);
+  return habitViewFromOccurrence(habit, localDate, occurrence, awards);
 }
 
 export async function reportHabitProgress(
@@ -277,11 +286,7 @@ export async function reportHabitProgress(
   return repository.recordHabitProgress({ command, habit, occurrence, now });
 }
 
-export function dueLocalDates(
-  habit: HabitDefinition,
-  now: string,
-  lookbackDays = 35,
-): string[] {
+export function dueLocalDates(habit: HabitDefinition, now: string, lookbackDays = 35): string[] {
   const dates: string[] = [];
   const nowMs = Date.parse(now);
   for (let offset = 0; offset <= lookbackDays; offset += 1) {

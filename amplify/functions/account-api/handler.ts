@@ -1,11 +1,15 @@
 import type { AppSyncIdentity } from 'aws-lambda';
 import { cognitoSub } from '../../shared/appsync.js';
-import type { CommunityRepository } from '../../shared/community-repository.js';
-import { configuredEnvironment } from '../../shared/config.js';
 import {
-  communityTableNamesFromEnvironment,
-  DynamoCommunityRepository,
-} from '../../shared/dynamo-community-repository.js';
+  awardConfigurationFromEnvironment,
+  configuredEnvironment,
+  type AwardConfiguration,
+} from '../../shared/config.js';
+import {
+  DynamoSocialRepository,
+  normalizeUsername,
+  socialTableNamesFromEnvironment,
+} from '../../shared/dynamo-social-repository.js';
 import {
   DynamoEngagementRepository,
   engagementTableNameFromEnvironment,
@@ -15,7 +19,6 @@ import {
   earnedPointsTableNamesFromEnvironment,
 } from '../../shared/dynamo-earned-points-repository.js';
 import type { EarnedPointsRepository } from '../../shared/earned-points-repository.js';
-import { PLATFORM_CONFIG } from '../../shared/config.js';
 import { DomainError } from '../../shared/domain.js';
 import {
   DynamoHabitRepository,
@@ -28,6 +31,7 @@ import {
   syncTableNamesFromEnvironment,
 } from '../../shared/dynamo-sync-repository.js';
 import type { SyncRepository } from '../../shared/sync-repository.js';
+import type { SocialRepository } from '../../shared/social-repository.js';
 import {
   archiveSyncedAlarmArgumentsSchema,
   listTransactionsArgumentsSchema,
@@ -54,7 +58,7 @@ export type AccountApiEvent = {
 
 export type AccountApiRepository = EarnedPointsRepository &
   SyncRepository &
-  CommunityRepository &
+  SocialRepository &
   EngagementRepository & {
     weeklyProgressRecap: (userId: string, now: string) => Promise<WeeklyProgressRecap>;
   };
@@ -63,6 +67,7 @@ export async function handleAccountApiEvent(
   event: AccountApiEvent,
   repository: AccountApiRepository,
   now = new Date().toISOString(),
+  awards: AwardConfiguration = awardConfigurationFromEnvironment(),
 ): Promise<unknown> {
   const userId = cognitoSub(event.identity);
   if (event.fieldName === 'getMyEarnedPointAccount') {
@@ -70,9 +75,6 @@ export async function handleAccountApiEvent(
     return {
       isEligible: true,
       earnedPointsTotal: account.currentPoints,
-      activeBallotId: undefined,
-      activeBallotEarnedPoints: 0,
-      activeBallotAllocatedVotes: 0,
       subscriptionStatus: 'ACTIVE',
       serverTimestamp: now,
     };
@@ -106,7 +108,7 @@ export async function handleAccountApiEvent(
         userId,
         qualification: 'WAKE_COMPLETION',
         sourceEventId: result.event.id,
-        points: PLATFORM_CONFIG.wakeCompletionPointEarned,
+        points: awards.wakeCompletion,
       },
       now,
     );
@@ -127,30 +129,58 @@ export async function handleAccountApiEvent(
     return {
       ...statistics,
       earnedPointsTotal: account.currentPoints,
-      activeBallotEarnedPoints: 0,
     };
   }
   if (event.fieldName === 'getMyWeeklyProgressRecap') {
     return repository.weeklyProgressRecap(userId, now);
   }
-  if (event.fieldName === 'getCommunityDashboard') {
-    return repository.dashboard(userId, now);
+  if (event.fieldName === 'getMySocialProfile') return repository.socialProfile(userId, now);
+  if (event.fieldName === 'setMyUsername') {
+    if (typeof event.arguments.username !== 'string') throw new DomainError('INVALID_USERNAME');
+    const username = normalizeUsername(event.arguments.username);
+    if (username === undefined) throw new DomainError('INVALID_USERNAME');
+    return repository.setUsername(userId, username, now);
   }
-  if (event.fieldName === 'allocateMyCharityVotes') {
-    const raw = event.arguments.input;
-    if (typeof raw !== 'object' || raw === null) throw new DomainError('INVALID_VOTE_ALLOCATION');
-    const input = raw as Record<string, unknown>;
-    if (
-      typeof input.charityId !== 'string' ||
-      typeof input.ballotId !== 'string' ||
-      typeof input.allocationEventId !== 'string' ||
-      !Number.isInteger(input.allocatedVotes) ||
-      Number(input.allocatedVotes) < 0
-    ) {
-      throw new DomainError('INVALID_VOTE_ALLOCATION');
-    }
-    return repository.allocatePoints(userId, input.charityId, now);
+  const socialOperation = new Set([
+    'sendFriendRequest',
+    'listMyFriendRequests',
+    'acceptFriendRequest',
+    'declineFriendRequest',
+    'cancelFriendRequest',
+    'listMyFriends',
+    'removeMyFriend',
+    'getMyFriendsLeaderboard',
+  ]).has(event.fieldName);
+  if (socialOperation && (await repository.socialProfile(userId, now)).usernameRequired) {
+    throw new DomainError('USERNAME_REQUIRED');
   }
+  if (event.fieldName === 'sendFriendRequest') {
+    const username = typeof event.arguments.username === 'string' ? event.arguments.username : '';
+    return repository.sendFriendRequest(userId, username, now);
+  }
+  if (event.fieldName === 'listMyFriendRequests') return repository.listFriendRequests(userId, now);
+  if (event.fieldName === 'acceptFriendRequest') {
+    if (typeof event.arguments.requestId !== 'string')
+      throw new DomainError('FRIEND_REQUEST_NOT_FOUND');
+    return repository.acceptFriendRequest(userId, event.arguments.requestId, now);
+  }
+  if (event.fieldName === 'declineFriendRequest') {
+    if (typeof event.arguments.requestId !== 'string')
+      throw new DomainError('FRIEND_REQUEST_NOT_FOUND');
+    return repository.declineFriendRequest(userId, event.arguments.requestId, now);
+  }
+  if (event.fieldName === 'cancelFriendRequest') {
+    if (typeof event.arguments.requestId !== 'string')
+      throw new DomainError('FRIEND_REQUEST_NOT_FOUND');
+    return repository.cancelFriendRequest(userId, event.arguments.requestId, now);
+  }
+  if (event.fieldName === 'listMyFriends') return { items: await repository.listFriends(userId) };
+  if (event.fieldName === 'removeMyFriend') {
+    if (typeof event.arguments.friendId !== 'string') throw new DomainError('FRIEND_NOT_FOUND');
+    return repository.removeFriend(userId, event.arguments.friendId, now);
+  }
+  if (event.fieldName === 'getMyFriendsLeaderboard')
+    return repository.friendsLeaderboard(userId, now);
   if (event.fieldName === 'recordMyEngagement') {
     const input = recordEngagementArgumentsSchema.parse(event.arguments.input);
     const occurredAt = Date.parse(input.occurredAt);
@@ -176,8 +206,8 @@ export const handler = async (event: AccountApiEvent): Promise<unknown> => {
     habitTableNamesFromEnvironment(),
     configuredEnvironment(),
   );
-  const community = new DynamoCommunityRepository(
-    communityTableNamesFromEnvironment(),
+  const social = new DynamoSocialRepository(
+    socialTableNamesFromEnvironment(),
     configuredEnvironment(),
   );
   const engagement = new DynamoEngagementRepository(
@@ -206,9 +236,25 @@ export const handler = async (event: AccountApiEvent): Promise<unknown> => {
         userId,
         now,
       ),
-    dashboard: (userId, now) => community.dashboard(userId, now),
-    allocatePoints: (userId, charityId, now) => community.allocatePoints(userId, charityId, now),
+    socialProfile: (userId, now) => social.socialProfile(userId, now),
+    setUsername: (userId, username, now) => social.setUsername(userId, username, now),
+    sendFriendRequest: (userId, username, now) => social.sendFriendRequest(userId, username, now),
+    listFriendRequests: (userId, now) => social.listFriendRequests(userId, now),
+    acceptFriendRequest: (userId, requestId, now) =>
+      social.acceptFriendRequest(userId, requestId, now),
+    declineFriendRequest: (userId, requestId, now) =>
+      social.declineFriendRequest(userId, requestId, now),
+    cancelFriendRequest: (userId, requestId, now) =>
+      social.cancelFriendRequest(userId, requestId, now),
+    listFriends: (userId) => social.listFriends(userId),
+    removeFriend: (userId, friendId, now) => social.removeFriend(userId, friendId, now),
+    friendsLeaderboard: (userId, now) => social.friendsLeaderboard(userId, now),
     recordEngagement: (command, now) => engagement.recordEngagement(command, now),
   };
-  return handleAccountApiEvent(event, repository);
+  return handleAccountApiEvent(
+    event,
+    repository,
+    new Date().toISOString(),
+    awardConfigurationFromEnvironment(),
+  );
 };

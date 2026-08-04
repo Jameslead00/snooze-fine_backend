@@ -14,6 +14,7 @@ import { habitEnforcerFunction } from './functions/habit-enforcer/resource.js';
 import { linkRevenueCatCustomerFunction } from './functions/link-revenuecat-customer/resource.js';
 import { requestAccountDeletionFunction } from './functions/request-account-deletion/resource.js';
 import { revenueCatWebhook } from './functions/revenuecat-webhook/resource.js';
+import { awardEnvironmentDefaults, socialEnvironmentDefaults } from './shared/config.js';
 
 const backend = defineBackend({
   auth,
@@ -53,10 +54,9 @@ const platformTables = {
   habit: requireTable('HabitDefinition'),
   habitOccurrence: requireTable('HabitOccurrence'),
   habitProgressEvent: requireTable('HabitProgressEvent'),
-  charity: requireTable('Charity'),
-  communityBallot: requireTable('CommunityBallot'),
-  charityBallotAllocation: requireTable('CharityBallotAllocation'),
-  companyContribution: requireTable('CompanyContribution'),
+  usernameReservation: requireTable('UsernameReservation'),
+  friendRequest: requireTable('FriendRequest'),
+  friendConnection: requireTable('FriendConnection'),
   accountDeletionRequest: requireTable('AccountDeletionRequest'),
 };
 const functions = {
@@ -86,16 +86,24 @@ const allTableEnvironment: Array<[string, ITable]> = [
   ['SYNCED_ALARM_TABLE_NAME', platformTables.syncedAlarm],
   ['WAKE_COMPLETION_TABLE_NAME', platformTables.wakeCompletion],
   ['ENGAGEMENT_EVENT_TABLE_NAME', platformTables.engagementEvent],
-  ['CHARITY_TABLE_NAME', platformTables.charity],
-  ['COMMUNITY_BALLOT_TABLE_NAME', platformTables.communityBallot],
-  ['CHARITY_BALLOT_ALLOCATION_TABLE_NAME', platformTables.charityBallotAllocation],
-  ['COMPANY_CONTRIBUTION_TABLE_NAME', platformTables.companyContribution],
+  ['USERNAME_RESERVATION_TABLE_NAME', platformTables.usernameReservation],
+  ['FRIEND_REQUEST_TABLE_NAME', platformTables.friendRequest],
+  ['FRIEND_CONNECTION_TABLE_NAME', platformTables.friendConnection],
 ];
 
 for (const target of Object.values(functions)) {
   for (const [variableName, table] of allTableEnvironment) {
     addTableEnvironment(target, variableName, table.tableName);
   }
+}
+
+for (const [name, value] of Object.entries({
+  ...awardEnvironmentDefaults(),
+  ...socialEnvironmentDefaults(),
+})) {
+  const configuredValue = process.env[name] ?? value;
+  functions.account.addEnvironment(name, configuredValue);
+  functions.habit.addEnvironment(name, configuredValue);
 }
 
 const habitTableEnvironment: Array<[string, ITable]> = [
@@ -123,10 +131,9 @@ platformTables.earnedPointEvent.grantReadWriteData(functions.account.resources.l
 platformTables.syncedAlarm.grantReadWriteData(functions.account.resources.lambda);
 platformTables.wakeCompletion.grantReadWriteData(functions.account.resources.lambda);
 platformTables.engagementEvent.grantReadWriteData(functions.account.resources.lambda);
-platformTables.charity.grantReadData(functions.account.resources.lambda);
-platformTables.communityBallot.grantReadWriteData(functions.account.resources.lambda);
-platformTables.charityBallotAllocation.grantReadWriteData(functions.account.resources.lambda);
-platformTables.companyContribution.grantReadData(functions.account.resources.lambda);
+platformTables.usernameReservation.grantReadWriteData(functions.account.resources.lambda);
+platformTables.friendRequest.grantReadWriteData(functions.account.resources.lambda);
+platformTables.friendConnection.grantReadWriteData(functions.account.resources.lambda);
 platformTables.habit.grantReadData(functions.account.resources.lambda);
 platformTables.habitOccurrence.grantReadData(functions.account.resources.lambda);
 functions.account.resources.lambda.addToRolePolicy(
@@ -136,7 +143,9 @@ functions.account.resources.lambda.addToRolePolicy(
       `${platformTables.earnedPointEvent.tableArn}/index/byUserEnvironmentAndCreatedAt`,
       `${platformTables.syncedAlarm.tableArn}/index/byUserEnvironmentAndUpdatedAt`,
       `${platformTables.wakeCompletion.tableArn}/index/byUserEnvironmentAndCompletedAt`,
-      `${platformTables.communityBallot.tableArn}/index/byEnvironmentStatusAndClosesAt`,
+      `${platformTables.friendRequest.tableArn}/index/byRequesterEnvironmentAndUpdatedAt`,
+      `${platformTables.friendRequest.tableArn}/index/byRecipientEnvironmentAndUpdatedAt`,
+      `${platformTables.friendConnection.tableArn}/index/byUserEnvironmentAndCreatedAt`,
       `${platformTables.habit.tableArn}/index/byUserEnvironmentAndUpdatedAt`,
       `${platformTables.habitOccurrence.tableArn}/index/byUserEnvironmentDateAndHabitId`,
     ],
@@ -173,7 +182,6 @@ const habitEnforcementRule = new Rule(habitScheduleStack, 'HabitEnforcementRule'
   enabled: true,
 });
 habitEnforcementRule.addTarget(new LambdaFunction(functions.habitEnforcer.resources.lambda));
-
 
 platformTables.accountDeletionRequest.grantWriteData(functions.deletion.resources.lambda);
 functions.deletion.addEnvironment(

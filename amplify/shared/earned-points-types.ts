@@ -57,7 +57,6 @@ export interface PointAwardPage {
     sourceEventId: string;
     relatedEventId: string | undefined;
     earnedPointsTotalAfter: number;
-    ballotId: string | undefined;
     createdAt: string;
   }>;
   nextToken: string | undefined;

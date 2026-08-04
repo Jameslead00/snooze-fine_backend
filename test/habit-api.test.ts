@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { AppSyncIdentity } from 'aws-lambda';
 import { handleHabitApiEvent } from '../amplify/functions/habit-api/handler.js';
-import { PLATFORM_CONFIG } from '../amplify/shared/config.js';
+import { awardConfigurationFromEnvironment } from '../amplify/shared/config.js';
 import { InMemoryHabitRepository } from './support/in-memory-habit-repository.js';
 
 const userId = '11111111-1111-4111-8111-111111111111';
@@ -52,7 +52,7 @@ describe('habit API', () => {
       targetValue: 2_000,
       stepValue: 33,
       scheduledToday: true,
-      completionAwardPoints: PLATFORM_CONFIG.habitCompletionPointEarned,
+      completionAwardPoints: awardConfigurationFromEnvironment().habits.WATER,
     });
   });
 
@@ -92,10 +92,38 @@ describe('habit API', () => {
 
     expect(habits).toEqual([
       expect.objectContaining({
-        completionAwardPoints: PLATFORM_CONFIG.habitCompletionPointEarned,
+        completionAwardPoints: awardConfigurationFromEnvironment().habits.WATER,
       }),
     ]);
     expect(habits[0]?.completionAwardPoints).toBeGreaterThan(0);
+  });
+
+  it('surfaces a server-configured award amount in habit views', async () => {
+    const repository = new InMemoryHabitRepository();
+    const result = (await handleHabitApiEvent(
+      {
+        fieldName: 'saveMyHabit',
+        arguments: {
+          input: {
+            habitId,
+            kind: 'BED',
+            title: 'Make the bed',
+            targetValue: 1,
+            stepValue: 1,
+            unit: 'CHECKMARK',
+            weekdays: [1],
+            deadlineMinutes: 1_000,
+            timezone: 'Europe/Zurich',
+          },
+        },
+        identity: { claims: { sub: userId } } as unknown as AppSyncIdentity,
+      },
+      repository,
+      now,
+      undefined,
+      { wakeCompletion: 40, habits: { WATER: 7, READING: 8, MEDITATION: 9, BED: 3, CUSTOM: 1 } },
+    )) as { completionAwardPoints: number };
+    expect(result.completionAwardPoints).toBe(3);
   });
 
   it('accepts the fixed BED habit kind through the GraphQL input contract', async () => {

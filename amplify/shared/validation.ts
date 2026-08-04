@@ -184,10 +184,6 @@ export const recordWakeCompletionArgumentsSchema = z.object({
   completedAt: z.iso.datetime({ offset: true }),
 });
 
-export const charityVoteArgumentsSchema = z.object({
-  charityId: z.string().min(1).max(200),
-});
-
 export const recordEngagementArgumentsSchema = z.object({
   eventId: z.string().uuid(),
   sessionId: z.string().uuid(),
