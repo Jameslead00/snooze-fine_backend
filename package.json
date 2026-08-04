@@ -17,6 +17,7 @@
     "sandbox": "ampx sandbox",
     "test": "vitest run",
     "test:watch": "vitest",
+    "reset:test-accounts": "tsx scripts/reset-test-accounts.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
