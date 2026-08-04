@@ -73,7 +73,9 @@ const isConditionalFailure = (error: unknown): boolean =>
 
 const profileName = (profile: Record<string, unknown> | undefined): string => {
   const value = typeof profile?.displayName === 'string' ? profile.displayName.trim() : '';
-  return value.length > 0 ? value : 'SnoozeFine member';
+  if (value.length > 0) return value;
+  const username = typeof profile?.username === 'string' ? profile.username.trim() : '';
+  return username.length > 0 ? `@${username}` : '';
 };
 
 const requestView = (
