@@ -10,6 +10,8 @@ export const accountApiFunction = defineFunction({
   environment: {
     SNOOZEFINE_ENVIRONMENT:
       process.env.SNOOZEFINE_ENVIRONMENT === 'PRODUCTION' ? 'PRODUCTION' : 'SANDBOX',
+    SNOOZEFINE_ALLOW_TESTFLIGHT_SANDBOX_SUBSCRIPTIONS:
+      process.env.SNOOZEFINE_ALLOW_TESTFLIGHT_SANDBOX_SUBSCRIPTIONS === 'true' ? 'true' : 'false',
   },
   logging: {
     format: 'json',

@@ -121,7 +121,10 @@ describe('habit API', () => {
       repository,
       now,
       undefined,
-      { wakeCompletion: 40, habits: { WATER: 7, READING: 8, MEDITATION: 9, BED: 3, CUSTOM: 1 } },
+      {
+        wakeCompletion: 40,
+        habits: { WATER: 7, READING: 8, MEDITATION: 9, BED: 3, STEPS: 11, CUSTOM: 1 },
+      },
     )) as { completionAwardPoints: number };
     expect(result.completionAwardPoints).toBe(3);
   });
@@ -179,5 +182,32 @@ describe('habit API', () => {
         now,
       ),
     ).rejects.toThrow();
+  });
+
+  it('accepts the STEPS habit kind through the GraphQL input contract', async () => {
+    const repository = new InMemoryHabitRepository();
+    const result = (await handleHabitApiEvent(
+      {
+        fieldName: 'saveMyHabit',
+        arguments: {
+          input: {
+            habitId,
+            kind: 'STEPS',
+            title: 'Steps',
+            targetValue: 10_000,
+            stepValue: 500,
+            unit: 'COUNT',
+            weekdays: [1, 2, 3, 4, 5, 6, 7],
+            deadlineMinutes: 1_439,
+            timezone: 'Europe/Zurich',
+          },
+        },
+        identity: { claims: { sub: userId } } as unknown as AppSyncIdentity,
+      },
+      repository,
+      now,
+    )) as { kind: string; unit: string; targetValue: number };
+
+    expect(result).toMatchObject({ kind: 'STEPS', unit: 'COUNT', targetValue: 10_000 });
   });
 });

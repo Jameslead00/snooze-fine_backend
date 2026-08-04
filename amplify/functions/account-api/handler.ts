@@ -2,6 +2,7 @@ import type { AppSyncIdentity } from 'aws-lambda';
 import { cognitoSub } from '../../shared/appsync.js';
 import {
   awardConfigurationFromEnvironment,
+  allowTestFlightSandboxSubscriptions,
   configuredEnvironment,
   type AwardConfiguration,
 } from '../../shared/config.js';
@@ -32,6 +33,11 @@ import {
 } from '../../shared/dynamo-sync-repository.js';
 import type { SyncRepository } from '../../shared/sync-repository.js';
 import type { SocialRepository } from '../../shared/social-repository.js';
+import type { SubscriptionRepository } from '../../shared/subscription-repository.js';
+import {
+  DynamoSubscriptionRepository,
+  subscriptionTableNameFromEnvironment,
+} from '../../shared/dynamo-subscription-repository.js';
 import {
   archiveSyncedAlarmArgumentsSchema,
   listTransactionsArgumentsSchema,
@@ -60,8 +66,40 @@ export type AccountApiRepository = EarnedPointsRepository &
   SyncRepository &
   SocialRepository &
   EngagementRepository & {
+    getSubscriptionState: SubscriptionRepository['getSubscriptionState'];
     weeklyProgressRecap: (userId: string, now: string) => Promise<WeeklyProgressRecap>;
   };
+
+const entitlementStatuses = new Set(['ACTIVE', 'GRACE_PERIOD', 'BILLING_ISSUE', 'CANCELLED_PENDING_EXPIRY']);
+
+function hasCurrentEntitlement(
+  subscription: Awaited<ReturnType<SubscriptionRepository['getSubscriptionState']>>,
+  now: string,
+): boolean {
+  if (subscription === undefined || !entitlementStatuses.has(subscription.status)) return false;
+  return Date.parse(subscription.currentPeriodEnd) > Date.parse(now);
+}
+
+async function currentEntitlement(
+  repository: AccountApiRepository,
+  userId: string,
+  now: string,
+): Promise<{ eligible: boolean; status: string }> {
+  const configured = configuredEnvironment();
+  const primary = await repository.getSubscriptionState(userId, configured);
+  if (hasCurrentEntitlement(primary, now)) {
+    return { eligible: true, status: primary?.status ?? 'UNKNOWN' };
+  }
+
+  if (allowTestFlightSandboxSubscriptions() && configured === 'PRODUCTION') {
+    const sandbox = await repository.getSubscriptionState(userId, 'SANDBOX');
+    if (hasCurrentEntitlement(sandbox, now)) {
+      return { eligible: true, status: sandbox?.status ?? 'UNKNOWN' };
+    }
+  }
+
+  return { eligible: false, status: primary?.status ?? 'INACTIVE' };
+}
 
 export async function handleAccountApiEvent(
   event: AccountApiEvent,
@@ -71,11 +109,14 @@ export async function handleAccountApiEvent(
 ): Promise<unknown> {
   const userId = cognitoSub(event.identity);
   if (event.fieldName === 'getMyEarnedPointAccount') {
-    const account = await repository.getDisciPointAccount(userId, now);
+    const [account, entitlement] = await Promise.all([
+      repository.getDisciPointAccount(userId, now),
+      currentEntitlement(repository, userId, now),
+    ]);
     return {
-      isEligible: true,
+      isEligible: entitlement.eligible,
       earnedPointsTotal: account.currentPoints,
-      subscriptionStatus: 'ACTIVE',
+      subscriptionStatus: entitlement.status,
       serverTimestamp: now,
     };
   }
@@ -214,6 +255,9 @@ export const handler = async (event: AccountApiEvent): Promise<unknown> => {
     engagementTableNameFromEnvironment(),
     configuredEnvironment(),
   );
+  const subscriptions = new DynamoSubscriptionRepository(
+    subscriptionTableNameFromEnvironment(),
+  );
   const repository: AccountApiRepository = {
     getDisciPointAccount: (userId, now) => earnedPoints.getDisciPointAccount(userId, now),
     earnPoints: (command, now) => earnedPoints.earnPoints(command, now),
@@ -250,6 +294,8 @@ export const handler = async (event: AccountApiEvent): Promise<unknown> => {
     removeFriend: (userId, friendId, now) => social.removeFriend(userId, friendId, now),
     friendsLeaderboard: (userId, now) => social.friendsLeaderboard(userId, now),
     recordEngagement: (command, now) => engagement.recordEngagement(command, now),
+    getSubscriptionState: (userId, environment) =>
+      subscriptions.getSubscriptionState(userId, environment),
   };
   return handleAccountApiEvent(
     event,

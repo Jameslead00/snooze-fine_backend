@@ -195,7 +195,7 @@ const schema = a.schema({
       environmentState: a.string().required(),
       // CUSTOM remains readable for legacy records, but all new fixed habits
       // use their own explicit enum value, including BED.
-      kind: a.enum(['WATER', 'READING', 'MEDITATION', 'BED', 'CUSTOM']),
+      kind: a.enum(['WATER', 'READING', 'MEDITATION', 'BED', 'STEPS', 'CUSTOM']),
       title: a.string().required(),
       targetValue: a.integer().required(),
       // Optional for backwards compatibility with habits created before
@@ -352,7 +352,7 @@ const schema = a.schema({
   }),
   SaveHabitInput: a.customType({
     habitId: a.id().required(),
-    kind: a.enum(['WATER', 'READING', 'MEDITATION', 'BED']),
+    kind: a.enum(['WATER', 'READING', 'MEDITATION', 'BED', 'STEPS']),
     title: a.string().required(),
     targetValue: a.integer().required(),
     stepValue: a.integer(),

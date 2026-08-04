@@ -106,6 +106,11 @@ for (const [name, value] of Object.entries({
   functions.habit.addEnvironment(name, configuredValue);
 }
 
+functions.account.addEnvironment(
+  'SNOOZEFINE_ALLOW_TESTFLIGHT_SANDBOX_SUBSCRIPTIONS',
+  process.env.SNOOZEFINE_ALLOW_TESTFLIGHT_SANDBOX_SUBSCRIPTIONS === 'true' ? 'true' : 'false',
+);
+
 const habitTableEnvironment: Array<[string, ITable]> = [
   ['HABIT_DEFINITION_TABLE_NAME', platformTables.habit],
   ['HABIT_OCCURRENCE_TABLE_NAME', platformTables.habitOccurrence],

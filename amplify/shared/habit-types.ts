@@ -1,6 +1,6 @@
 import type { RevenueCatEnvironment } from './config.js';
 
-export type HabitKind = 'WATER' | 'READING' | 'MEDITATION' | 'BED' | 'CUSTOM';
+export type HabitKind = 'WATER' | 'READING' | 'MEDITATION' | 'BED' | 'STEPS' | 'CUSTOM';
 export type SavableHabitKind = Exclude<HabitKind, 'CUSTOM'>;
 export type HabitUnit = 'MILLILITRES' | 'MINUTES' | 'COUNT' | 'CHECKMARK';
 export type HabitOccurrenceStatus = 'PENDING' | 'COMPLETED' | 'MISSED' | 'SKIPPED_INELIGIBLE';
@@ -99,6 +99,9 @@ export function defaultHabitStepValue(kind: HabitKind): number {
     case 'MEDITATION':
       return 10;
     case 'BED':
+      return 1;
+    case 'STEPS':
+      return 500;
     case 'CUSTOM':
       return 1;
   }

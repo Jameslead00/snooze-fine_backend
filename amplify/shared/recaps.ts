@@ -36,7 +36,13 @@ export interface WeeklyRecapRepository {
   statistics(userId: string, now: string): Promise<AccountabilityStatistics>;
 }
 
-const fixedHabitKinds: readonly WeeklyRecapHabitKind[] = ['WATER', 'READING', 'MEDITATION', 'BED'];
+const fixedHabitKinds: readonly WeeklyRecapHabitKind[] = [
+  'WATER',
+  'READING',
+  'MEDITATION',
+  'BED',
+  'STEPS',
+];
 
 function isFixedHabitKind(kind: HabitKind): kind is WeeklyRecapHabitKind {
   return fixedHabitKinds.includes(kind as WeeklyRecapHabitKind);

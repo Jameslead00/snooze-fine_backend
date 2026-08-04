@@ -5,6 +5,7 @@ import {
   type AccountApiEvent,
   type AccountApiRepository,
 } from '../amplify/functions/account-api/handler.js';
+import type { SubscriptionState } from '../amplify/shared/types.js';
 
 const userId = 'cognito-user-1';
 const now = '2026-07-31T16:30:00.000Z';
@@ -41,6 +42,7 @@ const repository = (): AccountApiRepository => ({
   removeFriend: vi.fn(),
   friendsLeaderboard: vi.fn(),
   recordEngagement: vi.fn(),
+  getSubscriptionState: vi.fn().mockResolvedValue(undefined),
 });
 
 const event = (fieldName: string, arguments_: Record<string, unknown> = {}): AccountApiEvent => ({
@@ -53,15 +55,72 @@ const event = (fieldName: string, arguments_: Record<string, unknown> = {}): Acc
 });
 
 describe('earned-point account API', () => {
-  it('returns only the earned-point account fields', async () => {
+  it('does not unlock an account without a current subscription', async () => {
     const subject = repository();
     await expect(
       handleAccountApiEvent(event('getMyEarnedPointAccount'), subject, now),
     ).resolves.toEqual({
-      isEligible: true,
+      isEligible: false,
       earnedPointsTotal: 25,
-      subscriptionStatus: 'ACTIVE',
+      subscriptionStatus: 'INACTIVE',
       serverTimestamp: now,
+    });
+  });
+
+  it('unlocks an account with a current subscription', async () => {
+    const subject = repository();
+    const subscription: SubscriptionState = {
+      id: `${userId}:snoozefine_plus:SANDBOX`,
+      userId,
+      revenueCatAppUserId: userId,
+      entitlementId: 'snoozefine_plus',
+      productId: 'snoozefine_plus_monthly',
+      status: 'ACTIVE',
+      environment: 'SANDBOX',
+      originalPurchaseAt: '2026-07-01T00:00:00.000Z',
+      currentPeriodStart: '2026-07-31T00:00:00.000Z',
+      currentPeriodEnd: '2026-08-31T00:00:00.000Z',
+      autoRenew: true,
+      lastRevenueCatEventId: 'event-1',
+      stateEventAt: now,
+      statusEffectiveAt: now,
+      updatedAt: now,
+    };
+    vi.mocked(subject.getSubscriptionState).mockResolvedValue(subscription);
+
+    await expect(
+      handleAccountApiEvent(event('getMyEarnedPointAccount'), subject, now),
+    ).resolves.toMatchObject({
+      isEligible: true,
+      subscriptionStatus: 'ACTIVE',
+    });
+  });
+
+  it('does not unlock an expired subscription', async () => {
+    const subject = repository();
+    vi.mocked(subject.getSubscriptionState).mockResolvedValue({
+      id: `${userId}:snoozefine_plus:SANDBOX`,
+      userId,
+      revenueCatAppUserId: userId,
+      entitlementId: 'snoozefine_plus',
+      productId: 'snoozefine_plus_monthly',
+      status: 'EXPIRED',
+      environment: 'SANDBOX',
+      originalPurchaseAt: '2026-07-01T00:00:00.000Z',
+      currentPeriodStart: '2026-07-01T00:00:00.000Z',
+      currentPeriodEnd: '2026-07-30T00:00:00.000Z',
+      autoRenew: false,
+      lastRevenueCatEventId: 'event-2',
+      stateEventAt: now,
+      statusEffectiveAt: '2026-07-30T00:00:00.000Z',
+      updatedAt: now,
+    });
+
+    await expect(
+      handleAccountApiEvent(event('getMyEarnedPointAccount'), subject, now),
+    ).resolves.toMatchObject({
+      isEligible: false,
+      subscriptionStatus: 'EXPIRED',
     });
   });
 
