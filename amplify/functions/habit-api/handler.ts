@@ -48,6 +48,7 @@ const publicHabit = (habit: Awaited<ReturnType<typeof habitDashboard>>[number]) 
   todayProgress: habit.todayProgress,
   todayStatus: habit.todayStatus,
   todayDueAt: habit.todayDueAt,
+  completionAwardPoints: habit.completionAwardPoints,
   createdAt: habit.createdAt,
   updatedAt: habit.updatedAt,
 });

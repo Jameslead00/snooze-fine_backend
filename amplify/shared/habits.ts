@@ -1,4 +1,5 @@
 import { DomainError } from './domain.js';
+import { PLATFORM_CONFIG } from './config.js';
 import type { HabitRepository } from './habit-repository.js';
 import type {
   HabitDefinition,
@@ -235,6 +236,7 @@ export function habitViewFromOccurrence(
     todayDueAt: scheduledToday
       ? (occurrence?.dueAt ?? localDeadlineUtc(localDate, habit.deadlineMinutes, habit.timezone))
       : undefined,
+    completionAwardPoints: PLATFORM_CONFIG.habitCompletionPointEarned,
   };
 }
 

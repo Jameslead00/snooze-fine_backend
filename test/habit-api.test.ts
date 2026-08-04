@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { AppSyncIdentity } from 'aws-lambda';
 import { handleHabitApiEvent } from '../amplify/functions/habit-api/handler.js';
+import { PLATFORM_CONFIG } from '../amplify/shared/config.js';
 import { InMemoryHabitRepository } from './support/in-memory-habit-repository.js';
 
 const userId = '11111111-1111-4111-8111-111111111111';
@@ -42,6 +43,7 @@ describe('habit API', () => {
       targetValue: number;
       stepValue: number;
       scheduledToday: boolean;
+      completionAwardPoints: number;
     };
 
     expect(result).toMatchObject({
@@ -50,7 +52,50 @@ describe('habit API', () => {
       targetValue: 2_000,
       stepValue: 33,
       scheduledToday: true,
+      completionAwardPoints: PLATFORM_CONFIG.habitCompletionPointEarned,
     });
+  });
+
+  it('exposes the fixed positive completion award on every returned habit view', async () => {
+    const repository = new InMemoryHabitRepository();
+    await handleHabitApiEvent(
+      {
+        fieldName: 'saveMyHabit',
+        arguments: {
+          input: {
+            habitId,
+            kind: 'WATER',
+            title: 'Drink water',
+            targetValue: 2_000,
+            stepValue: 250,
+            unit: 'MILLILITRES',
+            weekdays: [1, 2, 3, 4, 5, 6, 7],
+            deadlineMinutes: 1_320,
+            timezone: 'Europe/Zurich',
+          },
+        },
+        identity: { claims: { sub: userId } } as unknown as AppSyncIdentity,
+      },
+      repository,
+      now,
+    );
+
+    const habits = (await handleHabitApiEvent(
+      {
+        fieldName: 'getMyHabits',
+        arguments: {},
+        identity: { claims: { sub: userId } } as unknown as AppSyncIdentity,
+      },
+      repository,
+      now,
+    )) as Array<{ completionAwardPoints: number }>;
+
+    expect(habits).toEqual([
+      expect.objectContaining({
+        completionAwardPoints: PLATFORM_CONFIG.habitCompletionPointEarned,
+      }),
+    ]);
+    expect(habits[0]?.completionAwardPoints).toBeGreaterThan(0);
   });
 
   it('accepts the fixed BED habit kind through the GraphQL input contract', async () => {

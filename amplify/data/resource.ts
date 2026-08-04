@@ -412,6 +412,9 @@ const schema = a.schema({
     todayProgress: a.integer().required(),
     todayStatus: a.string().required(),
     todayDueAt: a.datetime(),
+    // Informational only: a fixed, server-configured award for completing this
+    // habit. It is never a balance, penalty, or monetary conversion.
+    completionAwardPoints: a.integer().required(),
     createdAt: a.datetime().required(),
     updatedAt: a.datetime().required(),
   }),

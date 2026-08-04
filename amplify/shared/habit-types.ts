@@ -87,6 +87,8 @@ export interface HabitView extends HabitDefinition {
   todayProgress: number;
   todayStatus: HabitOccurrenceStatus | 'NOT_SCHEDULED';
   todayDueAt: string | undefined;
+  /** Fixed server-configured points earned after a successful completion. */
+  completionAwardPoints: number;
 }
 
 export function defaultHabitStepValue(kind: HabitKind): number {
