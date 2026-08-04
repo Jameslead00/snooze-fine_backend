@@ -575,12 +575,17 @@ export class DynamoSocialRepository implements SocialRepository {
       new QueryCommand({
         TableName: this.tables.pointEvent,
         IndexName: 'byUserEnvironmentAndCreatedAt',
+        // DynamoDB permits only one condition on a sort key in a
+        // KeyConditionExpression. Use one inclusive range, then keep the
+        // month boundary strict with a filter for the exact next-month instant.
         KeyConditionExpression:
-          'userEnvironment = :userEnvironment AND createdAt >= :start AND createdAt < :end',
+          'userEnvironment = :userEnvironment AND createdAt BETWEEN :start AND :end',
+        FilterExpression: 'createdAt < :endExclusive',
         ExpressionAttributeValues: {
           ':userEnvironment': userEnvironment(userId, this.environment),
           ':start': start,
           ':end': end,
+          ':endExclusive': end,
         },
       }),
     );
