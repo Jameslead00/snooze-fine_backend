@@ -554,12 +554,15 @@ export class DynamoSocialRepository implements SocialRepository {
         ? 'byRecipientEnvironmentAndUpdatedAt'
         : 'byRequesterEnvironmentAndUpdatedAt';
     const attribute = direction === 'INCOMING' ? 'recipientEnvironment' : 'requesterEnvironment';
-    return this.queryAll(
+    const requests = await this.queryAll(
       this.tables.request,
       index,
       attribute,
       userEnvironment(userId, this.environment),
     );
+    // Historical request records remain in the table, but only pending
+    // requests are actionable and should be returned to the app.
+    return requests.filter((request) => request.status === 'PENDING');
   }
 
   private async connectionsFor(userId: string): Promise<Record<string, unknown>[]> {
