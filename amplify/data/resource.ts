@@ -498,6 +498,12 @@ const schema = a.schema({
     targetValue: a.integer().required(),
     progressPercentage: a.float().required(),
   }),
+  WeeklyRecapDayResult: a.customType({
+    date: a.date().required(),
+    promisesScheduled: a.integer().required(),
+    promisesKept: a.integer().required(),
+    promisesPercentage: a.float().required(),
+  }),
   WeeklyProgressRecapResult: a.customType({
     period: a.string().required(),
     periodStart: a.date().required(),
@@ -505,6 +511,7 @@ const schema = a.schema({
     includedDays: a.integer().required(),
     timezone: a.string().required(),
     habits: a.ref('WeeklyRecapHabitResult').array().required(),
+    days: a.ref('WeeklyRecapDayResult').array().required(),
     promisesScheduled: a.integer().required(),
     promisesKept: a.integer().required(),
     promisesPercentage: a.float().required(),

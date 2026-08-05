@@ -22,12 +22,20 @@ export interface WeeklyProgressRecap {
   includedDays: number;
   timezone: string;
   habits: WeeklyRecapHabit[];
+  days: WeeklyRecapDay[];
   promisesScheduled: number;
   promisesKept: number;
   promisesPercentage: number;
   wakeUps: number;
   noSnoozeMornings: number;
   serverTimestamp: string;
+}
+
+export interface WeeklyRecapDay {
+  date: string;
+  promisesScheduled: number;
+  promisesKept: number;
+  promisesPercentage: number;
 }
 
 export interface WeeklyRecapRepository {
@@ -126,6 +134,28 @@ export async function weeklyProgressRecap(
     .map((habit) =>
       habitRecap({ ...habit, kind: habit.kind as WeeklyRecapHabitKind }, dates, occurrencesByDate),
     );
+  const days = dates.map((date): WeeklyRecapDay => {
+    let promisesScheduled = 0;
+    let promisesKept = 0;
+    for (const habit of habits) {
+      if (
+        habit.activeState !== 'ACTIVE' ||
+        !isFixedHabitKind(habit.kind) ||
+        !isScheduled(habit, date)
+      ) {
+        continue;
+      }
+      promisesScheduled += 1;
+      const occurrence = occurrencesByDate.get(date)?.find((item) => item.habitId === habit.id);
+      if (occurrence?.status === 'COMPLETED') promisesKept += 1;
+    }
+    return {
+      date,
+      promisesScheduled,
+      promisesKept,
+      promisesPercentage: percentage(promisesKept, promisesScheduled),
+    };
+  });
   const promisesScheduled = recapHabits.reduce((total, habit) => total + habit.scheduledDays, 0);
   const promisesKept = recapHabits.reduce((total, habit) => total + habit.completedDays, 0);
 
@@ -136,6 +166,7 @@ export async function weeklyProgressRecap(
     includedDays: dates.length,
     timezone: statistics.timezone,
     habits: recapHabits,
+    days,
     promisesScheduled,
     promisesKept,
     promisesPercentage: percentage(promisesKept, promisesScheduled),
