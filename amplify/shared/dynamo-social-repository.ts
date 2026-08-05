@@ -453,11 +453,12 @@ export class DynamoSocialRepository implements SocialRepository {
     ];
     const friendConnections = await this.connectionsFor(userId);
     for (const entry of users) {
-      if (!entry.isCurrentUser)
+      if (!entry.isCurrentUser) {
         const connection = friendConnections.find(
           (candidate) => typeof candidate.id === 'string' && candidate.id === entry.friendId,
         );
         entry.userId = typeof connection?.friendUserId === 'string' ? connection.friendUserId : '';
+      }
     }
     const totals = await Promise.all(
       users.map((entry) => this.monthlyEarnedPoints(entry.userId, period.start, period.end)),
