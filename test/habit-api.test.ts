@@ -131,8 +131,7 @@ describe('habit API', () => {
           STEPS: 11,
           CALORIES: 12,
           EXERCISE_MINUTES: 13,
-          STAND_MINUTES: 14,
-          SLEEP_MINUTES: 15,
+          SLEEP_MINUTES: 14,
           CUSTOM: 1,
         },
       },
@@ -226,7 +225,6 @@ describe('habit API', () => {
     const cases = [
       { kind: 'CALORIES', unit: 'KILOCALORIES', targetValue: 500 },
       { kind: 'EXERCISE_MINUTES', unit: 'MINUTES', targetValue: 30 },
-      { kind: 'STAND_MINUTES', unit: 'MINUTES', targetValue: 720 },
       { kind: 'SLEEP_MINUTES', unit: 'MINUTES', targetValue: 480 },
     ] as const;
 

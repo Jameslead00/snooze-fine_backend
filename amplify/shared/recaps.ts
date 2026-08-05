@@ -44,7 +44,6 @@ const fixedHabitKinds: readonly WeeklyRecapHabitKind[] = [
   'STEPS',
   'CALORIES',
   'EXERCISE_MINUTES',
-  'STAND_MINUTES',
   'SLEEP_MINUTES',
 ];
 

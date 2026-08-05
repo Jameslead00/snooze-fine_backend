@@ -144,15 +144,21 @@ export async function handleAccountApiEvent(
   if (event.fieldName === 'recordWakeCompletion') {
     const input = recordWakeCompletionArgumentsSchema.parse(event.arguments.input);
     const result = await repository.recordWake({ userId, ...input }, now);
-    const earning = await repository.earnPoints(
-      {
-        userId,
-        qualification: 'WAKE_COMPLETION',
-        sourceEventId: result.event.id,
-        points: awards.wakeCompletion,
-      },
-      now,
-    );
+    const earning =
+      result.event.snoozeCount === 0
+        ? await repository.earnPoints(
+            {
+              userId,
+              qualification: 'WAKE_COMPLETION',
+              sourceEventId: result.event.id,
+              points: awards.wakeCompletion,
+            },
+            now,
+          )
+        : {
+            pointsEarned: 0,
+            currentPoints: (await repository.getDisciPointAccount(userId, now)).currentPoints,
+          };
     return {
       accepted: true,
       duplicate: result.duplicate,
@@ -169,6 +175,7 @@ export async function handleAccountApiEvent(
     ]);
     return {
       ...statistics,
+      wakeCompletionAwardPoints: awards.wakeCompletion,
       earnedPointsTotal: account.currentPoints,
     };
   }

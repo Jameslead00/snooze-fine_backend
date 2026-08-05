@@ -50,6 +50,7 @@ export interface RecordWakeCommand {
   alarmOccurrenceId: string;
   scheduledAt: string;
   completedAt: string;
+  snoozeCount: number;
 }
 
 export interface AccountabilityStatistics {

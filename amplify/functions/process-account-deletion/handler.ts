@@ -178,7 +178,12 @@ export class DynamoAccountDeletionStore implements AccountDeletionStore {
     await this.deleteByIndex(this.tables.customerLink, 'byCanonicalUser', 'userId', userId);
     await this.deleteByIndex(this.tables.webhook, 'byUserAndReceivedAt', 'userId', userId);
     await this.deleteByIndex(this.tables.habitOccurrence, 'byUserAndCreatedAt', 'userId', userId);
-    await this.deleteByIndex(this.tables.habitProgressEvent, 'byUserAndCreatedAt', 'userId', userId);
+    await this.deleteByIndex(
+      this.tables.habitProgressEvent,
+      'byUserAndCreatedAt',
+      'userId',
+      userId,
+    );
     await this.deleteByIndex(this.tables.usernameReservation, 'byUserId', 'userId', userId);
     await this.deleteByIndex(this.tables.subscription, 'byUserAndEnvironment', 'userId', userId);
 
@@ -243,9 +248,11 @@ export class DynamoAccountDeletionStore implements AccountDeletionStore {
 
   public async complete(request: AccountDeletionRequestRecord): Promise<void> {
     // The request record is operational state, not user content. Remove it
-    // after the user data and Cognito identity are gone so no deletion audit
-    // record becomes a second retention obligation.
-    await this.client.send(new DeleteCommand({ TableName: this.tables.request, Key: { id: request.id } }));
+    // after server-side user data cleanup so it does not become a second
+    // retention obligation.
+    await this.client.send(
+      new DeleteCommand({ TableName: this.tables.request, Key: { id: request.id } }),
+    );
   }
 
   public async fail(
@@ -299,7 +306,9 @@ export class DynamoAccountDeletionStore implements AccountDeletionStore {
       items.push(...(response.Items ?? []));
       exclusiveStartKey = response.LastEvaluatedKey;
     } while (exclusiveStartKey !== undefined && items.length < 25);
-    return items.map(asRequest).filter((request): request is AccountDeletionRequestRecord => request !== undefined);
+    return items
+      .map(asRequest)
+      .filter((request): request is AccountDeletionRequestRecord => request !== undefined);
   }
 
   private async deleteByIndex(
@@ -333,7 +342,9 @@ export class DynamoAccountDeletionStore implements AccountDeletionStore {
 
   private async deleteItems(tableName: string, items: Record<string, unknown>[]): Promise<void> {
     const writes = items
-      .filter((item): item is Record<string, unknown> & { id: string } => typeof item.id === 'string')
+      .filter(
+        (item): item is Record<string, unknown> & { id: string } => typeof item.id === 'string',
+      )
       .map((item): DocumentWriteRequest => ({ DeleteRequest: { Key: { id: item.id } } }));
     for (let start = 0; start < writes.length; start += 25) {
       let pending = writes.slice(start, start + 25);
@@ -342,7 +353,8 @@ export class DynamoAccountDeletionStore implements AccountDeletionStore {
           new BatchWriteCommand({ RequestItems: { [tableName]: pending } }),
         );
         pending = response.UnprocessedItems?.[tableName] ?? [];
-        if (pending.length > 0) await new Promise((resolve) => setTimeout(resolve, 25 * 2 ** attempt));
+        if (pending.length > 0)
+          await new Promise((resolve) => setTimeout(resolve, 25 * 2 ** attempt));
       }
       if (pending.length > 0) throw new Error('DynamoDB deletion batch was not fully processed');
     }

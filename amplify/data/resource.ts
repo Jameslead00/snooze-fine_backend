@@ -204,7 +204,6 @@ const schema = a.schema({
         'STEPS',
         'CALORIES',
         'EXERCISE_MINUTES',
-        'STAND_MINUTES',
         'SLEEP_MINUTES',
         'CUSTOM',
       ]),
@@ -339,7 +338,6 @@ const schema = a.schema({
     })
     .secondaryIndexes((index) => [
       index('status').sortKeys(['requestedAt']).name('byStatusAndRequestedAt'),
-      index('userId').sortKeys(['requestedAt']).name('byUserAndRequestedAt'),
     ])
     .authorization((allow) => [allow.group('ADMINS').to(['read', 'update'])]),
 
@@ -378,7 +376,6 @@ const schema = a.schema({
       'STEPS',
       'CALORIES',
       'EXERCISE_MINUTES',
-      'STAND_MINUTES',
       'SLEEP_MINUTES',
     ]),
     title: a.string().required(),
@@ -469,6 +466,7 @@ const schema = a.schema({
     alarmOccurrenceId: a.string().required(),
     scheduledAt: a.datetime().required(),
     completedAt: a.datetime().required(),
+    snoozeCount: a.integer().required(),
   }),
   RecordWakeCompletionResult: a.customType({
     accepted: a.boolean().required(),
@@ -485,6 +483,7 @@ const schema = a.schema({
     allTimeSnoozes: a.integer().required(),
     allTimeWakeUps: a.integer().required(),
     allTimeNoSnoozeMornings: a.integer().required(),
+    wakeCompletionAwardPoints: a.integer().required(),
     earnedPointsTotal: a.integer().required(),
     timezone: a.string().required(),
     serverTimestamp: a.datetime().required(),

@@ -141,7 +141,6 @@ const habitKindSchema = z.enum([
   'STEPS',
   'CALORIES',
   'EXERCISE_MINUTES',
-  'STAND_MINUTES',
   'SLEEP_MINUTES',
 ]);
 const habitUnitSchema = z.enum([
@@ -198,6 +197,7 @@ export const recordWakeCompletionArgumentsSchema = z.object({
   alarmOccurrenceId: z.string().min(1).max(200),
   scheduledAt: z.iso.datetime({ offset: true }),
   completedAt: z.iso.datetime({ offset: true }),
+  snoozeCount: z.number().int().min(0).max(100),
 });
 
 export const recordEngagementArgumentsSchema = z.object({

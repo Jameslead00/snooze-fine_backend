@@ -250,7 +250,12 @@ const deletionDataIndexArns = [
 ];
 functions.deletionProcessor.resources.lambda.addToRolePolicy(
   new PolicyStatement({
-    actions: ['dynamodb:BatchWriteItem', 'dynamodb:DeleteItem', 'dynamodb:Query', 'dynamodb:UpdateItem'],
+    actions: [
+      'dynamodb:BatchWriteItem',
+      'dynamodb:DeleteItem',
+      'dynamodb:Query',
+      'dynamodb:UpdateItem',
+    ],
     resources: [...deletionDataTableArns, ...deletionDataIndexArns],
   }),
 );

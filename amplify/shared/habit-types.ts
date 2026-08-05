@@ -8,7 +8,6 @@ export type HabitKind =
   | 'STEPS'
   | 'CALORIES'
   | 'EXERCISE_MINUTES'
-  | 'STAND_MINUTES'
   | 'SLEEP_MINUTES'
   | 'CUSTOM';
 export type SavableHabitKind = Exclude<HabitKind, 'CUSTOM'>;
@@ -119,7 +118,6 @@ export function defaultHabitStepValue(kind: HabitKind): number {
       return 500;
     case 'CALORIES':
     case 'EXERCISE_MINUTES':
-    case 'STAND_MINUTES':
     case 'SLEEP_MINUTES':
       return 1;
     case 'CUSTOM':

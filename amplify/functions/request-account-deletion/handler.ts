@@ -68,7 +68,8 @@ class DynamoAccountDeletionRequestWriter implements AccountDeletionRequestWriter
         }),
       );
     } catch (error) {
-      if (!(error instanceof Error) || error.name !== 'ConditionalCheckFailedException') throw error;
+      if (!(error instanceof Error) || error.name !== 'ConditionalCheckFailedException')
+        throw error;
       // Another authenticated request already queued or claimed the deletion.
     }
   }
