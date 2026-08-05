@@ -11,12 +11,7 @@ export type HabitKind =
   | 'SLEEP_MINUTES'
   | 'CUSTOM';
 export type SavableHabitKind = Exclude<HabitKind, 'CUSTOM'>;
-export type HabitUnit =
-  | 'MILLILITRES'
-  | 'MINUTES'
-  | 'COUNT'
-  | 'CHECKMARK'
-  | 'KILOCALORIES';
+export type HabitUnit = 'MILLILITRES' | 'MINUTES' | 'COUNT' | 'CHECKMARK' | 'KILOCALORIES';
 export type HabitOccurrenceStatus = 'PENDING' | 'COMPLETED' | 'MISSED' | 'SKIPPED_INELIGIBLE';
 
 export interface HabitDefinition {

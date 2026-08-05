@@ -143,13 +143,7 @@ const habitKindSchema = z.enum([
   'EXERCISE_MINUTES',
   'SLEEP_MINUTES',
 ]);
-const habitUnitSchema = z.enum([
-  'MILLILITRES',
-  'MINUTES',
-  'COUNT',
-  'CHECKMARK',
-  'KILOCALORIES',
-]);
+const habitUnitSchema = z.enum(['MILLILITRES', 'MINUTES', 'COUNT', 'CHECKMARK', 'KILOCALORIES']);
 
 export const saveHabitArgumentsSchema = z.object({
   habitId: z.string().uuid(),

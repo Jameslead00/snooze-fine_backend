@@ -70,7 +70,12 @@ export type AccountApiRepository = EarnedPointsRepository &
     weeklyProgressRecap: (userId: string, now: string) => Promise<WeeklyProgressRecap>;
   };
 
-const entitlementStatuses = new Set(['ACTIVE', 'GRACE_PERIOD', 'BILLING_ISSUE', 'CANCELLED_PENDING_EXPIRY']);
+const entitlementStatuses = new Set([
+  'ACTIVE',
+  'GRACE_PERIOD',
+  'BILLING_ISSUE',
+  'CANCELLED_PENDING_EXPIRY',
+]);
 
 function hasCurrentEntitlement(
   subscription: Awaited<ReturnType<SubscriptionRepository['getSubscriptionState']>>,
@@ -262,9 +267,7 @@ export const handler = async (event: AccountApiEvent): Promise<unknown> => {
     engagementTableNameFromEnvironment(),
     configuredEnvironment(),
   );
-  const subscriptions = new DynamoSubscriptionRepository(
-    subscriptionTableNameFromEnvironment(),
-  );
+  const subscriptions = new DynamoSubscriptionRepository(subscriptionTableNameFromEnvironment());
   const repository: AccountApiRepository = {
     getDisciPointAccount: (userId, now) => earnedPoints.getDisciPointAccount(userId, now),
     earnPoints: (command, now) => earnedPoints.earnPoints(command, now),

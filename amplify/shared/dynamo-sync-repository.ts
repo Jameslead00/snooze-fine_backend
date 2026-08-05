@@ -66,7 +66,7 @@ const asWake = (item: Record<string, unknown>): WakeCompletion => ({
   alarmOccurrenceId: String(item.alarmOccurrenceId),
   scheduledAt: String(item.scheduledAt),
   completedAt: String(item.completedAt),
-  snoozeCount: Number(item.snoozeCount),
+  snoozeCount: Math.min(100, Math.max(0, Number(item.snoozeCount ?? 0) || 0)),
   createdAt: String(item.createdAt),
 });
 

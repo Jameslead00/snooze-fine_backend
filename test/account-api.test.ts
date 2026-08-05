@@ -168,4 +168,89 @@ describe('earned-point account API', () => {
     await handleAccountApiEvent(event('listMyPointAwards', { limit: 30 }), subject, now);
     expect(subject.listPointAwards).toHaveBeenCalledWith(userId, 30, undefined);
   });
+
+  it('awards wake points only for a recorded no-snooze morning', async () => {
+    const subject = repository();
+    vi.mocked(subject.recordWake).mockResolvedValue({
+      duplicate: false,
+      event: {
+        id: 'wake-event-1',
+        userId,
+        environment: 'SANDBOX',
+        userEnvironment: `${userId}:SANDBOX`,
+        alarmId: 'alarm-1',
+        alarmOccurrenceId: 'occurrence-1',
+        scheduledAt: '2026-07-31T07:00:00.000Z',
+        completedAt: now,
+        snoozeCount: 0,
+        createdAt: now,
+      },
+    });
+    vi.mocked(subject.earnPoints).mockResolvedValue({
+      duplicate: false,
+      pointsEarned: 20,
+      currentPoints: 45,
+      lifetimeEarned: 45,
+      serverTimestamp: now,
+    });
+
+    await expect(
+      handleAccountApiEvent(
+        event('recordWakeCompletion', {
+          input: {
+            wakeEventId: '11111111-1111-4111-8111-111111111111',
+            alarmId: 'alarm-1',
+            alarmOccurrenceId: 'occurrence-1',
+            scheduledAt: '2026-07-31T07:00:00.000Z',
+            completedAt: now,
+            snoozeCount: 0,
+          },
+        }),
+        subject,
+        now,
+      ),
+    ).resolves.toMatchObject({ pointsAwarded: 20, earnedPointsTotal: 45 });
+    expect(subject.earnPoints).toHaveBeenCalledOnce();
+  });
+
+  it('records a snoozed morning but awards no wake points', async () => {
+    const subject = repository();
+    vi.mocked(subject.recordWake).mockResolvedValue({
+      duplicate: false,
+      event: {
+        id: 'wake-event-2',
+        userId,
+        environment: 'SANDBOX',
+        userEnvironment: `${userId}:SANDBOX`,
+        alarmId: 'alarm-1',
+        alarmOccurrenceId: 'occurrence-2',
+        scheduledAt: '2026-07-31T07:00:00.000Z',
+        completedAt: now,
+        snoozeCount: 2,
+        createdAt: now,
+      },
+    });
+
+    await expect(
+      handleAccountApiEvent(
+        event('recordWakeCompletion', {
+          input: {
+            wakeEventId: '22222222-2222-4222-8222-222222222222',
+            alarmId: 'alarm-1',
+            alarmOccurrenceId: 'occurrence-2',
+            scheduledAt: '2026-07-31T07:00:00.000Z',
+            completedAt: now,
+            snoozeCount: 2,
+          },
+        }),
+        subject,
+        now,
+      ),
+    ).resolves.toMatchObject({
+      snoozeCount: 2,
+      pointsAwarded: 0,
+      earnedPointsTotal: 25,
+    });
+    expect(subject.earnPoints).not.toHaveBeenCalled();
+  });
 });
