@@ -123,7 +123,18 @@ describe('habit API', () => {
       undefined,
       {
         wakeCompletion: 40,
-        habits: { WATER: 7, READING: 8, MEDITATION: 9, BED: 3, STEPS: 11, CUSTOM: 1 },
+        habits: {
+          WATER: 7,
+          READING: 8,
+          MEDITATION: 9,
+          BED: 3,
+          STEPS: 11,
+          CALORIES: 12,
+          EXERCISE_MINUTES: 13,
+          STAND_MINUTES: 14,
+          SLEEP_MINUTES: 15,
+          CUSTOM: 1,
+        },
       },
     )) as { completionAwardPoints: number };
     expect(result.completionAwardPoints).toBe(3);
@@ -209,5 +220,41 @@ describe('habit API', () => {
     )) as { kind: string; unit: string; targetValue: number };
 
     expect(result).toMatchObject({ kind: 'STEPS', unit: 'COUNT', targetValue: 10_000 });
+  });
+
+  it('accepts all Apple Health habit kinds and their units', async () => {
+    const cases = [
+      { kind: 'CALORIES', unit: 'KILOCALORIES', targetValue: 500 },
+      { kind: 'EXERCISE_MINUTES', unit: 'MINUTES', targetValue: 30 },
+      { kind: 'STAND_MINUTES', unit: 'MINUTES', targetValue: 720 },
+      { kind: 'SLEEP_MINUTES', unit: 'MINUTES', targetValue: 480 },
+    ] as const;
+
+    for (const [index, metric] of cases.entries()) {
+      const repository = new InMemoryHabitRepository();
+      const result = (await handleHabitApiEvent(
+        {
+          fieldName: 'saveMyHabit',
+          arguments: {
+            input: {
+              habitId: `22222222-2222-4222-8222-22222222222${index + 3}`,
+              kind: metric.kind,
+              title: metric.kind,
+              targetValue: metric.targetValue,
+              stepValue: 1,
+              unit: metric.unit,
+              weekdays: [1, 2, 3, 4, 5, 6, 7],
+              deadlineMinutes: 1_439,
+              timezone: 'Europe/Zurich',
+            },
+          },
+          identity: { claims: { sub: userId } } as unknown as AppSyncIdentity,
+        },
+        repository,
+        now,
+      )) as { kind: string; unit: string; targetValue: number };
+
+      expect(result).toMatchObject(metric);
+    }
   });
 });

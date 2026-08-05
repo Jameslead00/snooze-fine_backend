@@ -5,7 +5,17 @@ export const PLATFORM_CONFIG = {
   webhookMaxPayloadBytes: 256 * 1024,
 } as const;
 
-export type SupportedHabitKind = 'WATER' | 'READING' | 'MEDITATION' | 'BED' | 'STEPS' | 'CUSTOM';
+export type SupportedHabitKind =
+  | 'WATER'
+  | 'READING'
+  | 'MEDITATION'
+  | 'BED'
+  | 'STEPS'
+  | 'CALORIES'
+  | 'EXERCISE_MINUTES'
+  | 'STAND_MINUTES'
+  | 'SLEEP_MINUTES'
+  | 'CUSTOM';
 
 export interface AwardConfiguration {
   wakeCompletion: number;
@@ -13,13 +23,17 @@ export interface AwardConfiguration {
 }
 
 const DEFAULT_AWARDS: AwardConfiguration = {
-  wakeCompletion: 25,
+  wakeCompletion: 20,
   habits: {
     WATER: 10,
     READING: 10,
     MEDITATION: 10,
     BED: 10,
     STEPS: 10,
+    CALORIES: 10,
+    EXERCISE_MINUTES: 10,
+    STAND_MINUTES: 10,
+    SLEEP_MINUTES: 10,
     // Legacy custom habits are not creatable by the current API, but their
     // historical completion still receives the safe default award.
     CUSTOM: 10,
@@ -33,6 +47,10 @@ const awardEnvironmentNames: Record<'wakeCompletion' | SupportedHabitKind, strin
   MEDITATION: 'SNOOZEFINE_AWARD_HABIT_MEDITATION',
   BED: 'SNOOZEFINE_AWARD_HABIT_BED',
   STEPS: 'SNOOZEFINE_AWARD_HABIT_STEPS',
+  CALORIES: 'SNOOZEFINE_AWARD_HABIT_CALORIES',
+  EXERCISE_MINUTES: 'SNOOZEFINE_AWARD_HABIT_EXERCISE_MINUTES',
+  STAND_MINUTES: 'SNOOZEFINE_AWARD_HABIT_STAND_MINUTES',
+  SLEEP_MINUTES: 'SNOOZEFINE_AWARD_HABIT_SLEEP_MINUTES',
   CUSTOM: 'SNOOZEFINE_AWARD_HABIT_CUSTOM',
 };
 
@@ -63,6 +81,10 @@ export function awardConfigurationFromEnvironment(
       MEDITATION: parse('MEDITATION', DEFAULT_AWARDS.habits.MEDITATION),
       BED: parse('BED', DEFAULT_AWARDS.habits.BED),
       STEPS: parse('STEPS', DEFAULT_AWARDS.habits.STEPS),
+      CALORIES: parse('CALORIES', DEFAULT_AWARDS.habits.CALORIES),
+      EXERCISE_MINUTES: parse('EXERCISE_MINUTES', DEFAULT_AWARDS.habits.EXERCISE_MINUTES),
+      STAND_MINUTES: parse('STAND_MINUTES', DEFAULT_AWARDS.habits.STAND_MINUTES),
+      SLEEP_MINUTES: parse('SLEEP_MINUTES', DEFAULT_AWARDS.habits.SLEEP_MINUTES),
       CUSTOM: parse('CUSTOM', DEFAULT_AWARDS.habits.CUSTOM),
     },
   };
@@ -79,6 +101,10 @@ export const awardEnvironmentDefaults = (): Record<string, string> => ({
   [awardEnvironmentNames.MEDITATION]: String(DEFAULT_AWARDS.habits.MEDITATION),
   [awardEnvironmentNames.BED]: String(DEFAULT_AWARDS.habits.BED),
   [awardEnvironmentNames.STEPS]: String(DEFAULT_AWARDS.habits.STEPS),
+  [awardEnvironmentNames.CALORIES]: String(DEFAULT_AWARDS.habits.CALORIES),
+  [awardEnvironmentNames.EXERCISE_MINUTES]: String(DEFAULT_AWARDS.habits.EXERCISE_MINUTES),
+  [awardEnvironmentNames.STAND_MINUTES]: String(DEFAULT_AWARDS.habits.STAND_MINUTES),
+  [awardEnvironmentNames.SLEEP_MINUTES]: String(DEFAULT_AWARDS.habits.SLEEP_MINUTES),
   [awardEnvironmentNames.CUSTOM]: String(DEFAULT_AWARDS.habits.CUSTOM),
 });
 

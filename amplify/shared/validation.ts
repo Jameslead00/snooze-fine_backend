@@ -133,8 +133,24 @@ export const listTransactionsArgumentsSchema = z.object({
     .transform((value) => value ?? undefined),
 });
 
-const habitKindSchema = z.enum(['WATER', 'READING', 'MEDITATION', 'BED', 'STEPS']);
-const habitUnitSchema = z.enum(['MILLILITRES', 'MINUTES', 'COUNT', 'CHECKMARK']);
+const habitKindSchema = z.enum([
+  'WATER',
+  'READING',
+  'MEDITATION',
+  'BED',
+  'STEPS',
+  'CALORIES',
+  'EXERCISE_MINUTES',
+  'STAND_MINUTES',
+  'SLEEP_MINUTES',
+]);
+const habitUnitSchema = z.enum([
+  'MILLILITRES',
+  'MINUTES',
+  'COUNT',
+  'CHECKMARK',
+  'KILOCALORIES',
+]);
 
 export const saveHabitArgumentsSchema = z.object({
   habitId: z.string().uuid(),

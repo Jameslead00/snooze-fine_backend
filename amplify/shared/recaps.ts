@@ -42,6 +42,10 @@ const fixedHabitKinds: readonly WeeklyRecapHabitKind[] = [
   'MEDITATION',
   'BED',
   'STEPS',
+  'CALORIES',
+  'EXERCISE_MINUTES',
+  'STAND_MINUTES',
+  'SLEEP_MINUTES',
 ];
 
 function isFixedHabitKind(kind: HabitKind): kind is WeeklyRecapHabitKind {
