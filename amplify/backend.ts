@@ -205,7 +205,7 @@ const habitEnforcementRule = new Rule(habitScheduleStack, 'HabitEnforcementRule'
 });
 habitEnforcementRule.addTarget(new LambdaFunction(functions.habitEnforcer.resources.lambda));
 
-platformTables.accountDeletionRequest.grantWriteData(functions.deletion.resources.lambda);
+platformTables.accountDeletionRequest.grantReadWriteData(functions.deletion.resources.lambda);
 functions.deletion.addEnvironment(
   'ACCOUNT_DELETION_REQUEST_TABLE_NAME',
   platformTables.accountDeletionRequest.tableName,
