@@ -53,6 +53,7 @@ const schema = a.schema({
     })
     .secondaryIndexes((index) => [
       index('status').sortKeys(['receivedAt']).name('byStatusAndReceivedAt'),
+      index('userId').sortKeys(['receivedAt']).name('byUserAndReceivedAt'),
     ])
     .authorization((allow) => [allow.group('ADMINS').to(['read'])]),
 
@@ -249,6 +250,7 @@ const schema = a.schema({
     })
     .secondaryIndexes((index) => [
       index('userEnvironmentDate').sortKeys(['habitId']).name('byUserEnvironmentDateAndHabitId'),
+      index('userId').sortKeys(['createdAt']).name('byUserAndCreatedAt'),
     ])
     .authorization((allow) => [allow.group('ADMINS').to(['read'])]),
 
@@ -276,6 +278,7 @@ const schema = a.schema({
       userId: a.id().required(),
       createdAt: a.datetime().required(),
     })
+    .secondaryIndexes((index) => [index('userId').sortKeys(['createdAt']).name('byUserId')])
     .authorization((allow) => [allow.group('ADMINS').to(['read'])]),
 
   FriendRequest: a
@@ -326,6 +329,9 @@ const schema = a.schema({
       userId: a.id().required(),
       environment: a.enum(['SANDBOX', 'PRODUCTION']),
       status: a.enum(['REQUESTED', 'PROCESSING', 'COMPLETED', 'FAILED']),
+      attempts: a.integer(),
+      lastError: a.string(),
+      nextAttemptAt: a.integer(),
       requestedAt: a.datetime().required(),
       completedAt: a.datetime(),
       ownerNote: a.string(),
@@ -333,6 +339,7 @@ const schema = a.schema({
     })
     .secondaryIndexes((index) => [
       index('status').sortKeys(['requestedAt']).name('byStatusAndRequestedAt'),
+      index('userId').sortKeys(['requestedAt']).name('byUserAndRequestedAt'),
     ])
     .authorization((allow) => [allow.group('ADMINS').to(['read', 'update'])]),
 

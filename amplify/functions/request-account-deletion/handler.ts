@@ -1,5 +1,5 @@
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, PutCommand } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient, GetCommand, PutCommand } from '@aws-sdk/lib-dynamodb';
 import type { AppSyncIdentity } from 'aws-lambda';
 import { cognitoSub } from '../../shared/appsync.js';
 import { configuredEnvironment } from '../../shared/config.js';
@@ -42,19 +42,35 @@ class DynamoAccountDeletionRequestWriter implements AccountDeletionRequestWriter
       throw new Error('ACCOUNT_DELETION_REQUEST_TABLE_NAME is not configured');
     }
     const environment = configuredEnvironment();
-    await this.client.send(
-      new PutCommand({
-        TableName: tableName,
-        Item: {
-          id: `${userId}:${environment}`,
-          userId,
-          environment,
-          status: 'REQUESTED',
-          requestedAt: now,
-          updatedAt: now,
-        },
-      }),
+    const id = `${userId}:${environment}`;
+    const existing = await this.client.send(
+      new GetCommand({ TableName: tableName, Key: { id }, ConsistentRead: true }),
     );
+    const status = (existing.Item as Record<string, unknown> | undefined)?.status;
+    if (status === 'REQUESTED' || status === 'PROCESSING' || status === 'COMPLETED') return;
+
+    try {
+      await this.client.send(
+        new PutCommand({
+          TableName: tableName,
+          Item: {
+            id,
+            userId,
+            environment,
+            status: 'REQUESTED',
+            attempts: 0,
+            requestedAt: now,
+            updatedAt: now,
+          },
+          ConditionExpression: 'attribute_not_exists(id) OR #status = :failed',
+          ExpressionAttributeNames: { '#status': 'status' },
+          ExpressionAttributeValues: { ':failed': 'FAILED' },
+        }),
+      );
+    } catch (error) {
+      if (!(error instanceof Error) || error.name !== 'ConditionalCheckFailedException') throw error;
+      // Another authenticated request already queued or claimed the deletion.
+    }
   }
 }
 
