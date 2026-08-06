@@ -24,9 +24,10 @@ Do not point staging and production at the same webhook endpoint or database dep
    - `SIWA_PRIVATE_KEY`
    - `SIWA_TEAM_ID`
    - `REVENUECAT_WEBHOOK_AUTH_TOKEN`
+   - `REVENUECAT_SECRET_API_KEY`
 
    The current non-production values may be reused for staging. Keep them out of Git, Xcode, and
-   the iOS bundle. `REVENUECAT_SECRET_API_KEY` is not needed by the current backend.
+   the iOS bundle. The secret API key is used only by the backend's explicit subscription sync.
 
 4. Confirm the deployer has permission to deploy Amplify Gen 2 backend resources.
 5. Start the branch deployment and wait for CloudFormation to finish successfully.
