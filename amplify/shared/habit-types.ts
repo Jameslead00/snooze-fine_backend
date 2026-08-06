@@ -1,8 +1,17 @@
 import type { RevenueCatEnvironment } from './config.js';
 
-export type HabitKind = 'WATER' | 'READING' | 'MEDITATION' | 'BED' | 'CUSTOM';
+export type HabitKind =
+  | 'WATER'
+  | 'READING'
+  | 'MEDITATION'
+  | 'BED'
+  | 'STEPS'
+  | 'CALORIES'
+  | 'EXERCISE_MINUTES'
+  | 'SLEEP_MINUTES'
+  | 'CUSTOM';
 export type SavableHabitKind = Exclude<HabitKind, 'CUSTOM'>;
-export type HabitUnit = 'MILLILITRES' | 'MINUTES' | 'COUNT' | 'CHECKMARK';
+export type HabitUnit = 'MILLILITRES' | 'MINUTES' | 'COUNT' | 'CHECKMARK' | 'KILOCALORIES';
 export type HabitOccurrenceStatus = 'PENDING' | 'COMPLETED' | 'MISSED' | 'SKIPPED_INELIGIBLE';
 
 export interface HabitDefinition {
@@ -99,6 +108,13 @@ export function defaultHabitStepValue(kind: HabitKind): number {
     case 'MEDITATION':
       return 10;
     case 'BED':
+      return 1;
+    case 'STEPS':
+      return 500;
+    case 'CALORIES':
+    case 'EXERCISE_MINUTES':
+    case 'SLEEP_MINUTES':
+      return 1;
     case 'CUSTOM':
       return 1;
   }

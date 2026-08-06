@@ -66,7 +66,7 @@ const asWake = (item: Record<string, unknown>): WakeCompletion => ({
   alarmOccurrenceId: String(item.alarmOccurrenceId),
   scheduledAt: String(item.scheduledAt),
   completedAt: String(item.completedAt),
-  snoozeCount: Number(item.snoozeCount),
+  snoozeCount: Math.min(100, Math.max(0, Number(item.snoozeCount ?? 0) || 0)),
   createdAt: String(item.createdAt),
 });
 
@@ -186,7 +186,7 @@ export class DynamoSyncRepository implements SyncRepository {
       alarmOccurrenceId: command.alarmOccurrenceId,
       scheduledAt: command.scheduledAt,
       completedAt: command.completedAt,
-      snoozeCount: 0,
+      snoozeCount: command.snoozeCount,
       createdAt: now,
     };
     try {
@@ -221,13 +221,15 @@ export class DynamoSyncRepository implements SyncRepository {
       )
     ).map(asWake);
     const weekWakes = wakes.filter((wake) => wake.completedAt >= weekStart);
+    const successfulWeekWakes = weekWakes.filter((wake) => wake.snoozeCount === 0);
+    const successfulWakes = wakes.filter((wake) => wake.snoozeCount === 0);
     return {
-      weekSnoozes: 0,
-      weekWakeUps: weekWakes.length,
-      weekNoSnoozeMornings: weekWakes.filter((wake) => wake.snoozeCount === 0).length,
-      allTimeSnoozes: 0,
-      allTimeWakeUps: wakes.length,
-      allTimeNoSnoozeMornings: wakes.filter((wake) => wake.snoozeCount === 0).length,
+      weekSnoozes: weekWakes.reduce((total, wake) => total + wake.snoozeCount, 0),
+      weekWakeUps: successfulWeekWakes.length,
+      weekNoSnoozeMornings: successfulWeekWakes.length,
+      allTimeSnoozes: wakes.reduce((total, wake) => total + wake.snoozeCount, 0),
+      allTimeWakeUps: successfulWakes.length,
+      allTimeNoSnoozeMornings: successfulWakes.length,
       timezone,
       serverTimestamp: now,
     };

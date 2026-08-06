@@ -53,6 +53,7 @@ const schema = a.schema({
     })
     .secondaryIndexes((index) => [
       index('status').sortKeys(['receivedAt']).name('byStatusAndReceivedAt'),
+      index('userId').sortKeys(['receivedAt']).name('byUserAndReceivedAt'),
     ])
     .authorization((allow) => [allow.group('ADMINS').to(['read'])]),
 
@@ -195,13 +196,23 @@ const schema = a.schema({
       environmentState: a.string().required(),
       // CUSTOM remains readable for legacy records, but all new fixed habits
       // use their own explicit enum value, including BED.
-      kind: a.enum(['WATER', 'READING', 'MEDITATION', 'BED', 'CUSTOM']),
+      kind: a.enum([
+        'WATER',
+        'READING',
+        'MEDITATION',
+        'BED',
+        'STEPS',
+        'CALORIES',
+        'EXERCISE_MINUTES',
+        'SLEEP_MINUTES',
+        'CUSTOM',
+      ]),
       title: a.string().required(),
       targetValue: a.integer().required(),
       // Optional for backwards compatibility with habits created before
       // per-habit progress steps were introduced.
       stepValue: a.integer(),
-      unit: a.enum(['MILLILITRES', 'MINUTES', 'COUNT', 'CHECKMARK']),
+      unit: a.enum(['MILLILITRES', 'MINUTES', 'COUNT', 'CHECKMARK', 'KILOCALORIES']),
       weekdays: a.integer().array().required(),
       deadlineMinutes: a.integer().required(),
       timezone: a.string().required(),
@@ -227,7 +238,7 @@ const schema = a.schema({
       localDate: a.date().required(),
       dueAt: a.datetime().required(),
       targetValue: a.integer().required(),
-      unit: a.enum(['MILLILITRES', 'MINUTES', 'COUNT', 'CHECKMARK']),
+      unit: a.enum(['MILLILITRES', 'MINUTES', 'COUNT', 'CHECKMARK', 'KILOCALORIES']),
       progressValue: a.integer().required(),
       status: a.enum(['PENDING', 'COMPLETED', 'MISSED', 'SKIPPED_INELIGIBLE']),
       completedAt: a.datetime(),
@@ -238,6 +249,7 @@ const schema = a.schema({
     })
     .secondaryIndexes((index) => [
       index('userEnvironmentDate').sortKeys(['habitId']).name('byUserEnvironmentDateAndHabitId'),
+      index('userId').sortKeys(['createdAt']).name('byUserAndCreatedAt'),
     ])
     .authorization((allow) => [allow.group('ADMINS').to(['read'])]),
 
@@ -265,6 +277,7 @@ const schema = a.schema({
       userId: a.id().required(),
       createdAt: a.datetime().required(),
     })
+    .secondaryIndexes((index) => [index('userId').sortKeys(['createdAt']).name('byUserId')])
     .authorization((allow) => [allow.group('ADMINS').to(['read'])]),
 
   FriendRequest: a
@@ -315,6 +328,9 @@ const schema = a.schema({
       userId: a.id().required(),
       environment: a.enum(['SANDBOX', 'PRODUCTION']),
       status: a.enum(['REQUESTED', 'PROCESSING', 'COMPLETED', 'FAILED']),
+      attempts: a.integer(),
+      lastError: a.string(),
+      nextAttemptAt: a.integer(),
       requestedAt: a.datetime().required(),
       completedAt: a.datetime(),
       ownerNote: a.string(),
@@ -352,11 +368,20 @@ const schema = a.schema({
   }),
   SaveHabitInput: a.customType({
     habitId: a.id().required(),
-    kind: a.enum(['WATER', 'READING', 'MEDITATION', 'BED']),
+    kind: a.enum([
+      'WATER',
+      'READING',
+      'MEDITATION',
+      'BED',
+      'STEPS',
+      'CALORIES',
+      'EXERCISE_MINUTES',
+      'SLEEP_MINUTES',
+    ]),
     title: a.string().required(),
     targetValue: a.integer().required(),
     stepValue: a.integer(),
-    unit: a.enum(['MILLILITRES', 'MINUTES', 'COUNT', 'CHECKMARK']),
+    unit: a.enum(['MILLILITRES', 'MINUTES', 'COUNT', 'CHECKMARK', 'KILOCALORIES']),
     weekdays: a.integer().array().required(),
     deadlineMinutes: a.integer().required(),
     timezone: a.string().required(),
@@ -441,6 +466,7 @@ const schema = a.schema({
     alarmOccurrenceId: a.string().required(),
     scheduledAt: a.datetime().required(),
     completedAt: a.datetime().required(),
+    snoozeCount: a.integer().required(),
   }),
   RecordWakeCompletionResult: a.customType({
     accepted: a.boolean().required(),
@@ -457,6 +483,7 @@ const schema = a.schema({
     allTimeSnoozes: a.integer().required(),
     allTimeWakeUps: a.integer().required(),
     allTimeNoSnoozeMornings: a.integer().required(),
+    wakeCompletionAwardPoints: a.integer().required(),
     earnedPointsTotal: a.integer().required(),
     timezone: a.string().required(),
     serverTimestamp: a.datetime().required(),
@@ -471,6 +498,12 @@ const schema = a.schema({
     targetValue: a.integer().required(),
     progressPercentage: a.float().required(),
   }),
+  WeeklyRecapDayResult: a.customType({
+    date: a.date().required(),
+    promisesScheduled: a.integer().required(),
+    promisesKept: a.integer().required(),
+    promisesPercentage: a.float().required(),
+  }),
   WeeklyProgressRecapResult: a.customType({
     period: a.string().required(),
     periodStart: a.date().required(),
@@ -478,6 +511,7 @@ const schema = a.schema({
     includedDays: a.integer().required(),
     timezone: a.string().required(),
     habits: a.ref('WeeklyRecapHabitResult').array().required(),
+    days: a.ref('WeeklyRecapDayResult').array().required(),
     promisesScheduled: a.integer().required(),
     promisesKept: a.integer().required(),
     promisesPercentage: a.float().required(),

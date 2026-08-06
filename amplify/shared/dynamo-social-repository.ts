@@ -242,9 +242,11 @@ export class DynamoSocialRepository implements SocialRepository {
       id,
       requesterUserId: userId,
       recipientUserId: recipientId,
-      requesterUsername: String(requesterProfile?.username ?? ''),
+      requesterUsername:
+        typeof requesterProfile?.username === 'string' ? requesterProfile.username : '',
       requesterDisplayName: profileName(requesterProfile),
-      recipientUsername: String(recipientProfile?.username ?? normalized),
+      recipientUsername:
+        typeof recipientProfile?.username === 'string' ? recipientProfile.username : normalized,
       recipientDisplayName: profileName(recipientProfile),
       environment: this.environment,
       requesterEnvironment: userEnvironment(userId, this.environment),
@@ -437,7 +439,7 @@ export class DynamoSocialRepository implements SocialRepository {
       {
         userId,
         friendId: undefined as string | undefined,
-        username: String(profile?.username ?? ''),
+        username: typeof profile?.username === 'string' ? profile.username : '',
         displayName: profileName(profile),
         isCurrentUser: true,
       },
@@ -451,11 +453,12 @@ export class DynamoSocialRepository implements SocialRepository {
     ];
     const friendConnections = await this.connectionsFor(userId);
     for (const entry of users) {
-      if (!entry.isCurrentUser)
-        entry.userId = String(
-          friendConnections.find((connection) => String(connection.id) === entry.friendId)
-            ?.friendUserId ?? '',
+      if (!entry.isCurrentUser) {
+        const connection = friendConnections.find(
+          (candidate) => typeof candidate.id === 'string' && candidate.id === entry.friendId,
         );
+        entry.userId = typeof connection?.friendUserId === 'string' ? connection.friendUserId : '';
+      }
     }
     const totals = await Promise.all(
       users.map((entry) => this.monthlyEarnedPoints(entry.userId, period.start, period.end)),

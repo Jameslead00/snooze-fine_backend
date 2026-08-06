@@ -121,6 +121,11 @@ describe('weekly progress recaps', () => {
       periodEnd: '2026-08-05',
       includedDays: 3,
       timezone: 'Europe/Zurich',
+      days: [
+        { date: '2026-08-03', promisesScheduled: 3, promisesKept: 2, promisesPercentage: 66.67 },
+        { date: '2026-08-04', promisesScheduled: 2, promisesKept: 0, promisesPercentage: 0 },
+        { date: '2026-08-05', promisesScheduled: 3, promisesKept: 1, promisesPercentage: 33.33 },
+      ],
       promisesScheduled: 8,
       promisesKept: 3,
       promisesPercentage: 37.5,

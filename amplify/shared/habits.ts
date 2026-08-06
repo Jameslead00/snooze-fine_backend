@@ -9,6 +9,7 @@ import type {
   HabitProgressResult,
   HabitSettlementResult,
   HabitView,
+  HabitUnit,
   SaveHabitCommand,
 } from './habit-types.js';
 import { sha256 } from './security.js';
@@ -159,6 +160,17 @@ function validateHabit(command: SaveHabitCommand): void {
   ) {
     throw new DomainError('INVALID_HABIT_STEP');
   }
+  const expectedUnit: HabitUnit =
+    command.kind === 'WATER'
+      ? 'MILLILITRES'
+      : command.kind === 'CALORIES'
+        ? 'KILOCALORIES'
+        : command.kind === 'BED'
+          ? 'CHECKMARK'
+          : command.kind === 'STEPS'
+            ? 'COUNT'
+            : 'MINUTES';
+  if (command.unit !== expectedUnit) throw new DomainError('INVALID_HABIT_UNIT');
   if (
     command.weekdays.length === 0 ||
     command.weekdays.length > 7 ||

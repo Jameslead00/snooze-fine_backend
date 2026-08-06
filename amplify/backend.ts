@@ -13,6 +13,7 @@ import { habitApiFunction } from './functions/habit-api/resource.js';
 import { habitEnforcerFunction } from './functions/habit-enforcer/resource.js';
 import { linkRevenueCatCustomerFunction } from './functions/link-revenuecat-customer/resource.js';
 import { requestAccountDeletionFunction } from './functions/request-account-deletion/resource.js';
+import { processAccountDeletionFunction } from './functions/process-account-deletion/resource.js';
 import { revenueCatWebhook } from './functions/revenuecat-webhook/resource.js';
 import { awardEnvironmentDefaults, socialEnvironmentDefaults } from './shared/config.js';
 
@@ -24,6 +25,7 @@ const backend = defineBackend({
   habitEnforcerFunction,
   linkRevenueCatCustomerFunction,
   requestAccountDeletionFunction,
+  processAccountDeletionFunction,
   revenueCatWebhook,
 });
 
@@ -65,6 +67,7 @@ const functions = {
   habitEnforcer: backend.habitEnforcerFunction,
   link: backend.linkRevenueCatCustomerFunction,
   deletion: backend.requestAccountDeletionFunction,
+  deletionProcessor: backend.processAccountDeletionFunction,
   webhook: backend.revenueCatWebhook,
 };
 
@@ -106,6 +109,11 @@ for (const [name, value] of Object.entries({
   functions.habit.addEnvironment(name, configuredValue);
 }
 
+functions.account.addEnvironment(
+  'SNOOZEFINE_ALLOW_TESTFLIGHT_SANDBOX_SUBSCRIPTIONS',
+  process.env.SNOOZEFINE_ALLOW_TESTFLIGHT_SANDBOX_SUBSCRIPTIONS === 'true' ? 'true' : 'false',
+);
+
 const habitTableEnvironment: Array<[string, ITable]> = [
   ['HABIT_DEFINITION_TABLE_NAME', platformTables.habit],
   ['HABIT_OCCURRENCE_TABLE_NAME', platformTables.habitOccurrence],
@@ -117,6 +125,11 @@ for (const target of [functions.habit, functions.habitEnforcer, functions.accoun
   }
 }
 
+functions.deletionProcessor.addEnvironment(
+  'ACCOUNT_DELETION_REQUEST_TABLE_NAME',
+  platformTables.accountDeletionRequest.tableName,
+);
+
 platformTables.customerLink.grantReadData(functions.webhook.resources.lambda);
 platformTables.webhook.grantReadWriteData(functions.webhook.resources.lambda);
 platformTables.subscription.grantReadWriteData(functions.webhook.resources.lambda);
@@ -125,6 +138,13 @@ platformTables.userProfile.grantReadWriteData(functions.link.resources.lambda);
 platformTables.customerLink.grantReadWriteData(functions.link.resources.lambda);
 
 platformTables.subscription.grantReadData(functions.account.resources.lambda);
+// The entitlement lookup uses the secondary index; grant its ARN explicitly.
+functions.account.resources.lambda.addToRolePolicy(
+  new PolicyStatement({
+    actions: ['dynamodb:Query'],
+    resources: [`${platformTables.subscription.tableArn}/index/byUserAndEnvironment`],
+  }),
+);
 // Account API owns username setup as well as social-profile reads. Username
 // reservation is atomic, but the companion profile write must be authorized.
 platformTables.userProfile.grantReadWriteData(functions.account.resources.lambda);
@@ -185,11 +205,67 @@ const habitEnforcementRule = new Rule(habitScheduleStack, 'HabitEnforcementRule'
 });
 habitEnforcementRule.addTarget(new LambdaFunction(functions.habitEnforcer.resources.lambda));
 
-platformTables.accountDeletionRequest.grantWriteData(functions.deletion.resources.lambda);
+platformTables.accountDeletionRequest.grantReadWriteData(functions.deletion.resources.lambda);
 functions.deletion.addEnvironment(
   'ACCOUNT_DELETION_REQUEST_TABLE_NAME',
   platformTables.accountDeletionRequest.tableName,
 );
+
+const deletionDataTables = [
+  platformTables.userProfile,
+  platformTables.customerLink,
+  platformTables.webhook,
+  platformTables.subscription,
+  platformTables.earnedPointAccount,
+  platformTables.earnedPointEvent,
+  platformTables.syncedAlarm,
+  platformTables.wakeCompletion,
+  platformTables.engagementEvent,
+  platformTables.habit,
+  platformTables.habitOccurrence,
+  platformTables.habitProgressEvent,
+  platformTables.usernameReservation,
+  platformTables.friendRequest,
+  platformTables.friendConnection,
+  platformTables.accountDeletionRequest,
+];
+const deletionDataTableArns = deletionDataTables.map((table) => table.tableArn);
+const deletionDataIndexArns = [
+  `${platformTables.customerLink.tableArn}/index/byCanonicalUser`,
+  `${platformTables.webhook.tableArn}/index/byUserAndReceivedAt`,
+  `${platformTables.subscription.tableArn}/index/byUserAndEnvironment`,
+  `${platformTables.earnedPointAccount.tableArn}/index/byUserEnvironmentAndUpdatedAt`,
+  `${platformTables.earnedPointEvent.tableArn}/index/byUserEnvironmentAndCreatedAt`,
+  `${platformTables.syncedAlarm.tableArn}/index/byUserEnvironmentAndUpdatedAt`,
+  `${platformTables.wakeCompletion.tableArn}/index/byUserEnvironmentAndCompletedAt`,
+  `${platformTables.engagementEvent.tableArn}/index/byUserEnvironmentAndReceivedAt`,
+  `${platformTables.habit.tableArn}/index/byUserEnvironmentAndUpdatedAt`,
+  `${platformTables.habitOccurrence.tableArn}/index/byUserAndCreatedAt`,
+  `${platformTables.habitProgressEvent.tableArn}/index/byUserAndCreatedAt`,
+  `${platformTables.usernameReservation.tableArn}/index/byUserId`,
+  `${platformTables.friendRequest.tableArn}/index/byRequesterEnvironmentAndUpdatedAt`,
+  `${platformTables.friendRequest.tableArn}/index/byRecipientEnvironmentAndUpdatedAt`,
+  `${platformTables.friendConnection.tableArn}/index/byUserEnvironmentAndCreatedAt`,
+  `${platformTables.accountDeletionRequest.tableArn}/index/byStatusAndRequestedAt`,
+];
+functions.deletionProcessor.resources.lambda.addToRolePolicy(
+  new PolicyStatement({
+    actions: [
+      'dynamodb:BatchWriteItem',
+      'dynamodb:DeleteItem',
+      'dynamodb:Query',
+      'dynamodb:UpdateItem',
+    ],
+    resources: [...deletionDataTableArns, ...deletionDataIndexArns],
+  }),
+);
+
+const accountDeletionScheduleStack = backend.createStack('account-deletion-schedule');
+const accountDeletionRule = new Rule(accountDeletionScheduleStack, 'AccountDeletionRule', {
+  schedule: Schedule.rate(Duration.minutes(5)),
+  enabled: true,
+});
+accountDeletionRule.addTarget(new LambdaFunction(functions.deletionProcessor.resources.lambda));
 
 const webhookStack = backend.createStack('revenuecat-webhook-api');
 const webhookApi = new HttpApi(webhookStack, 'RevenueCatWebhookApi', {

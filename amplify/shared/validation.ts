@@ -133,8 +133,17 @@ export const listTransactionsArgumentsSchema = z.object({
     .transform((value) => value ?? undefined),
 });
 
-const habitKindSchema = z.enum(['WATER', 'READING', 'MEDITATION', 'BED']);
-const habitUnitSchema = z.enum(['MILLILITRES', 'MINUTES', 'COUNT', 'CHECKMARK']);
+const habitKindSchema = z.enum([
+  'WATER',
+  'READING',
+  'MEDITATION',
+  'BED',
+  'STEPS',
+  'CALORIES',
+  'EXERCISE_MINUTES',
+  'SLEEP_MINUTES',
+]);
+const habitUnitSchema = z.enum(['MILLILITRES', 'MINUTES', 'COUNT', 'CHECKMARK', 'KILOCALORIES']);
 
 export const saveHabitArgumentsSchema = z.object({
   habitId: z.string().uuid(),
@@ -182,6 +191,7 @@ export const recordWakeCompletionArgumentsSchema = z.object({
   alarmOccurrenceId: z.string().min(1).max(200),
   scheduledAt: z.iso.datetime({ offset: true }),
   completedAt: z.iso.datetime({ offset: true }),
+  snoozeCount: z.number().int().min(0).max(100),
 });
 
 export const recordEngagementArgumentsSchema = z.object({
