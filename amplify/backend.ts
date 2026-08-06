@@ -156,6 +156,9 @@ platformTables.subscription.grantReadWriteData(functions.webhook.resources.lambd
 
 platformTables.userProfile.grantReadWriteData(functions.link.resources.lambda);
 platformTables.customerLink.grantReadWriteData(functions.link.resources.lambda);
+// The link resolver performs an explicit RevenueCat customer reconciliation
+// after storing aliases, so it must be able to persist the resulting state.
+platformTables.subscription.grantReadWriteData(functions.link.resources.lambda);
 
 platformTables.subscription.grantReadData(functions.account.resources.lambda);
 // The entitlement lookup uses the secondary index; grant its ARN explicitly.

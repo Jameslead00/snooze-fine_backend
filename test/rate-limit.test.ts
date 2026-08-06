@@ -18,7 +18,7 @@ describe('per-user rate limiting', () => {
       windowSeconds: 600,
     });
     expect(rateLimitPolicyFor('linkRevenueCatCustomer')).toEqual(
-      RATE_LIMIT_POLICIES.linkRevenueCatCustomer,
+      { name: 'revenuecat-link', limit: 30, windowSeconds: 3_600 },
     );
     expect(rateLimitPolicyFor('unsupportedOperation')).toBeUndefined();
   });

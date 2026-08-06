@@ -170,7 +170,7 @@ function customerInfoFromResponse(body: unknown): RevenueCatCustomerInfo {
   if (!isRecord(subscriber)) {
     throw new Error('RevenueCat customer lookup returned no subscriber');
   }
-  return subscriber as RevenueCatCustomerInfo;
+  return subscriber;
 }
 
 export async function fetchRevenueCatCustomerInfo(

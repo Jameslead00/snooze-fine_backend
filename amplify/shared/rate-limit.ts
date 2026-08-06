@@ -41,7 +41,11 @@ export const RATE_LIMIT_POLICIES: Readonly<Record<string, RateLimitPolicy>> = Ob
   saveMyHabit: { name: 'habit-save', limit: 30, windowSeconds: 300 },
   archiveMyHabit: { name: 'habit-archive', limit: 30, windowSeconds: 300 },
   reportHabitProgress: { name: 'habit-progress', limit: 60, windowSeconds: 300 },
-  linkRevenueCatCustomer: { name: 'revenuecat-link', limit: 5, windowSeconds: 3_600 },
+  // The authenticated client invokes this idempotent operation during sign-in,
+  // creator-code sync, receipt restoration, and explicit eligibility retries.
+  // Five calls per hour can lock out a healthy session; thirty still bounds the
+  // backend RevenueCat lookup while allowing those normal reconciliation paths.
+  linkRevenueCatCustomer: { name: 'revenuecat-link', limit: 30, windowSeconds: 3_600 },
   requestMyAccountDeletion: { name: 'account-deletion', limit: 3, windowSeconds: 3_600 },
 });
 
