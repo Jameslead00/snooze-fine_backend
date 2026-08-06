@@ -202,6 +202,21 @@ platformTables.habitOccurrence.grantReadWriteData(functions.habit.resources.lamb
 platformTables.habitProgressEvent.grantReadWriteData(functions.habit.resources.lambda);
 platformTables.earnedPointAccount.grantReadWriteData(functions.habit.resources.lambda);
 platformTables.earnedPointEvent.grantReadWriteData(functions.habit.resources.lambda);
+// CDK's grantReadWriteData intentionally covers the individual DynamoDB item
+// actions, but not TransactWriteItems. Progress recording atomically writes the
+// occurrence and event tables, and a completion atomically writes the points
+// account and award event, so both transactions need an explicit scoped grant.
+functions.habit.resources.lambda.addToRolePolicy(
+  new PolicyStatement({
+    actions: ['dynamodb:TransactWriteItems'],
+    resources: [
+      platformTables.habitOccurrence.tableArn,
+      platformTables.habitProgressEvent.tableArn,
+      platformTables.earnedPointAccount.tableArn,
+      platformTables.earnedPointEvent.tableArn,
+    ],
+  }),
+);
 functions.habit.resources.lambda.addToRolePolicy(
   new PolicyStatement({
     actions: ['dynamodb:Query'],
