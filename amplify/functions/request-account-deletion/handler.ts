@@ -4,6 +4,12 @@ import type { AppSyncIdentity } from 'aws-lambda';
 import { cognitoSub } from '../../shared/appsync.js';
 import { configuredEnvironment } from '../../shared/config.js';
 import { DomainError } from '../../shared/domain.js';
+import {
+  DynamoRateLimiter,
+  NoopRateLimiter,
+  rateLimitPolicyFor,
+  type RateLimiter,
+} from '../../shared/rate-limit.js';
 
 export type RequestAccountDeletionEvent = {
   fieldName: string;
@@ -19,11 +25,14 @@ export async function handleRequestAccountDeletionEvent(
   event: RequestAccountDeletionEvent,
   writer: AccountDeletionRequestWriter,
   now = new Date().toISOString(),
+  rateLimiter: RateLimiter = new NoopRateLimiter(),
 ): Promise<unknown> {
   if (event.fieldName !== 'requestMyAccountDeletion') {
     throw new DomainError('UNSUPPORTED_OPERATION');
   }
   const userId = cognitoSub(event.identity);
+  const rateLimitPolicy = rateLimitPolicyFor(event.fieldName);
+  if (rateLimitPolicy !== undefined) await rateLimiter.check(userId, rateLimitPolicy);
   if (event.arguments.confirmation !== 'DELETE') {
     throw new DomainError('ACCOUNT_DELETION_CONFIRMATION_REQUIRED');
   }
@@ -76,4 +85,9 @@ class DynamoAccountDeletionRequestWriter implements AccountDeletionRequestWriter
 }
 
 export const handler = async (event: RequestAccountDeletionEvent): Promise<unknown> =>
-  handleRequestAccountDeletionEvent(event, new DynamoAccountDeletionRequestWriter());
+  handleRequestAccountDeletionEvent(
+    event,
+    new DynamoAccountDeletionRequestWriter(),
+    new Date().toISOString(),
+    new DynamoRateLimiter(),
+  );

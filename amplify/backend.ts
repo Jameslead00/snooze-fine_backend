@@ -1,9 +1,15 @@
 import { defineBackend } from '@aws-amplify/backend';
 import { HttpApi, HttpMethod } from 'aws-cdk-lib/aws-apigatewayv2';
 import { HttpLambdaIntegration } from 'aws-cdk-lib/aws-apigatewayv2-integrations';
-import type { ITable } from 'aws-cdk-lib/aws-dynamodb';
+import {
+  AttributeType,
+  BillingMode,
+  Table,
+  TableEncryption,
+  type ITable,
+} from 'aws-cdk-lib/aws-dynamodb';
 import { PolicyStatement } from 'aws-cdk-lib/aws-iam';
-import { Duration } from 'aws-cdk-lib';
+import { Duration, RemovalPolicy } from 'aws-cdk-lib';
 import { Rule, Schedule } from 'aws-cdk-lib/aws-events';
 import { LambdaFunction } from 'aws-cdk-lib/aws-events-targets';
 import { auth } from './auth/resource.js';
@@ -70,6 +76,20 @@ const functions = {
   deletionProcessor: backend.processAccountDeletionFunction,
   webhook: backend.revenueCatWebhook,
 };
+
+const rateLimitStack = backend.createStack('rate-limits');
+const rateLimitTable = new Table(rateLimitStack, 'RateLimitTable', {
+  partitionKey: { name: 'bucketKey', type: AttributeType.STRING },
+  billingMode: BillingMode.PAY_PER_REQUEST,
+  encryption: TableEncryption.AWS_MANAGED,
+  timeToLiveAttribute: 'expiresAt',
+  removalPolicy: RemovalPolicy.RETAIN,
+});
+
+for (const target of [functions.account, functions.habit, functions.link, functions.deletion]) {
+  rateLimitTable.grantReadWriteData(target.resources.lambda);
+  target.addEnvironment('RATE_LIMIT_TABLE_NAME', rateLimitTable.tableName);
+}
 
 function addTableEnvironment(
   target: (typeof functions)[keyof typeof functions],
@@ -270,7 +290,7 @@ accountDeletionRule.addTarget(new LambdaFunction(functions.deletionProcessor.res
 const webhookStack = backend.createStack('revenuecat-webhook-api');
 const webhookApi = new HttpApi(webhookStack, 'RevenueCatWebhookApi', {
   apiName: 'snoozefine-revenuecat-webhook',
-  createDefaultStage: true,
+  createDefaultStage: false,
 });
 webhookApi.addRoutes({
   path: '/webhooks/revenuecat',
@@ -279,6 +299,14 @@ webhookApi.addRoutes({
     'RevenueCatWebhookIntegration',
     functions.webhook.resources.lambda,
   ),
+});
+webhookApi.addStage('DefaultStage', {
+  stageName: '$default',
+  autoDeploy: true,
+  throttle: {
+    rateLimit: 10,
+    burstLimit: 20,
+  },
 });
 
 backend.addOutput({
