@@ -71,9 +71,12 @@ body is a recommended production-hardening addition.
 Create separate RevenueCat webhook configurations for staging and production:
 
 - staging backend URL: select **sandbox purchases only**;
-- production backend URL: select **production purchases only**;
-- if a dedicated production troubleshooting path also receives sandbox events, the stored
-  `environment` still isolates them and all CLI/settlement commands require an environment.
+- production backend URL: select **production and sandbox purchases** when testing the production
+  app through TestFlight. TestFlight transactions are sandbox transactions even though the app
+  uses the production backend. Deploy the production account API with
+  `SNOOZEFINE_ALLOW_TESTFLIGHT_SANDBOX_SUBSCRIPTIONS=true` so it checks the isolated SANDBOX
+  subscription state as well as PRODUCTION state;
+- otherwise, production can remain **production purchases only** for an App Store-only deployment.
 
 Do not point both environments at one database deployment as an operational shortcut. The schema
 also stores environment on subscription, account, period, transaction, snooze, webhook, and
@@ -147,17 +150,19 @@ npm run admin:unresolved-webhooks -- --environment SANDBOX
 RevenueCat retries non-2xx deliveries. Its event `id` stays stable across retries, which is the
 backend's webhook idempotency key.
 
-## 8. Optional secret API key
+## 8. RevenueCat secret API key for explicit sync
 
-`REVENUECAT_SECRET_API_KEY` is reserved for future server-side subscriber lookup/reconciliation.
-This slice makes no RevenueCat REST API calls and does not require it. If later enabled:
+The link operation now performs a server-side Customer Info lookup after the app submits a restore
+or receipt sync. This handles existing subscriptions for which RevenueCat does not emit a new
+webhook. Store a RevenueCat **secret** API key in the backend only:
 
 ```bash
 npx ampx sandbox secret set REVENUECAT_SECRET_API_KEY
 ```
 
-Then add a `secret('REVENUECAT_SECRET_API_KEY')` reference only to the specific function that needs
-it and grant no client access.
+For a hosted branch, add the same secret in Amplify Console → Hosting → Secrets before deployment.
+The key is injected only into `snoozefine-link-revenuecat`; it is never included in iOS or returned
+to the client. RevenueCat's server API uses `GET /v1/subscribers/{app_user_id}` for this lookup.
 
 ## 9. Rotate the authorization value
 

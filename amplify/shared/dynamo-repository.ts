@@ -2,6 +2,7 @@ import {
   BatchGetCommand,
   DynamoDBDocumentClient,
   GetCommand,
+  PutCommand,
   TransactWriteCommand,
   type TransactWriteCommandInput,
 } from '@aws-sdk/lib-dynamodb';
@@ -9,7 +10,7 @@ import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { type RevenueCatEnvironment } from './config.js';
 import { DomainError } from './domain.js';
 import type { ApplyRevenueCatInput, PlatformRepository } from './repository.js';
-import type { RevenueCatProcessingResult, WebhookRecord } from './types.js';
+import type { RevenueCatProcessingResult, SubscriptionState, WebhookRecord } from './types.js';
 
 export interface PlatformTableNames {
   userProfile: string;
@@ -116,6 +117,35 @@ export class DynamoPlatformRepository implements PlatformRepository {
         return { duplicate: true, status: webhook.status, allocatedPoints: 0, userId: webhook.userId };
       }
       throw error;
+    }
+  }
+
+  public async reconcileRevenueCatSubscription(input: {
+    subscription: SubscriptionState;
+    now: string;
+  }): Promise<void> {
+    const current = await this.getItem(this.tables.subscription, input.subscription.id);
+    try {
+      await this.client.send(
+        new PutCommand({
+          TableName: this.tables.subscription,
+          Item: {
+            ...input.subscription,
+            originalPurchaseAt:
+              current === undefined
+                ? input.subscription.originalPurchaseAt
+                : String(current.originalPurchaseAt),
+            createdAt: current?.createdAt ?? input.now,
+            updatedAt: input.now,
+          },
+          ConditionExpression: 'attribute_not_exists(id) OR stateEventAt <= :stateEventAt',
+          ExpressionAttributeValues: { ':stateEventAt': input.subscription.stateEventAt },
+        }),
+      );
+    } catch (error) {
+      // A webhook with newer state may win a race with this explicit lookup.
+      // Keeping that newer state is the correct result for the caller.
+      if (!isConditionalFailure(error)) throw error;
     }
   }
 

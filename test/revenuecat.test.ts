@@ -22,6 +22,13 @@ class InMemorySubscriptionRepository implements PlatformRepository {
     return { duplicate: false, status: input.webhook.status, allocatedPoints: 0 as const, userId: input.webhook.userId };
   }
 
+  public async reconcileRevenueCatSubscription(input: {
+    subscription: NonNullable<ApplyRevenueCatInput['subscription']>;
+    now: string;
+  }): Promise<void> {
+    this.subscriptions.set(input.subscription.id, input.subscription);
+  }
+
   public async linkRevenueCatCustomer(): Promise<{ linked: boolean; duplicate: boolean }> {
     return { linked: true, duplicate: false };
   }
