@@ -17,6 +17,12 @@ import {
 } from '../../shared/dynamo-habit-repository.js';
 import { DomainError } from '../../shared/domain.js';
 import {
+  DynamoRateLimiter,
+  NoopRateLimiter,
+  rateLimitPolicyFor,
+  type RateLimiter,
+} from '../../shared/rate-limit.js';
+import {
   archiveHabit,
   habitDashboard,
   habitView,
@@ -63,8 +69,11 @@ export async function handleHabitApiEvent(
   now = new Date().toISOString(),
   earnedPoints?: EarnedPointsRepository,
   awards: AwardConfiguration = awardConfigurationFromEnvironment(),
+  rateLimiter: RateLimiter = new NoopRateLimiter(),
 ): Promise<unknown> {
   const userId = cognitoSub(event.identity);
+  const rateLimitPolicy = rateLimitPolicyFor(event.fieldName);
+  if (rateLimitPolicy !== undefined) await rateLimiter.check(userId, rateLimitPolicy);
   switch (event.fieldName) {
     case 'getMyHabits':
       return (await habitDashboard(repository, userId, now, awards)).map(publicHabit);
@@ -141,5 +150,6 @@ export const handler = async (event: HabitApiEvent): Promise<unknown> => {
     new Date().toISOString(),
     earnedPoints,
     awardConfigurationFromEnvironment(),
+    new DynamoRateLimiter(),
   );
 };

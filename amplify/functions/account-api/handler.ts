@@ -22,6 +22,12 @@ import {
 import type { EarnedPointsRepository } from '../../shared/earned-points-repository.js';
 import { DomainError } from '../../shared/domain.js';
 import {
+  DynamoRateLimiter,
+  NoopRateLimiter,
+  rateLimitPolicyFor,
+  type RateLimiter,
+} from '../../shared/rate-limit.js';
+import {
   DynamoHabitRepository,
   habitTableNamesFromEnvironment,
 } from '../../shared/dynamo-habit-repository.js';
@@ -111,8 +117,11 @@ export async function handleAccountApiEvent(
   repository: AccountApiRepository,
   now = new Date().toISOString(),
   awards: AwardConfiguration = awardConfigurationFromEnvironment(),
+  rateLimiter: RateLimiter = new NoopRateLimiter(),
 ): Promise<unknown> {
   const userId = cognitoSub(event.identity);
+  const rateLimitPolicy = rateLimitPolicyFor(event.fieldName);
+  if (rateLimitPolicy !== undefined) await rateLimiter.check(userId, rateLimitPolicy);
   if (event.fieldName === 'getMyEarnedPointAccount') {
     const [account, entitlement] = await Promise.all([
       repository.getDisciPointAccount(userId, now),
@@ -312,5 +321,6 @@ export const handler = async (event: AccountApiEvent): Promise<unknown> => {
     repository,
     new Date().toISOString(),
     awardConfigurationFromEnvironment(),
+    new DynamoRateLimiter(),
   );
 };
