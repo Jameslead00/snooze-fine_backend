@@ -93,9 +93,11 @@ export class InMemoryHabitRepository implements HabitRepository {
     const completed = progressValue >= input.habit.targetValue;
     const occurrence: HabitOccurrence = {
       ...(current ?? input.occurrence),
+      targetValue: input.habit.targetValue,
+      unit: input.habit.unit,
       progressValue,
       status: completed ? 'COMPLETED' : 'PENDING',
-      completedAt: completed ? input.command.occurredAt : current?.completedAt,
+      completedAt: completed ? (current?.completedAt ?? input.command.occurredAt) : undefined,
       version: (current?.version ?? 0) + 1,
       updatedAt: input.now,
     };
@@ -112,7 +114,11 @@ export class InMemoryHabitRepository implements HabitRepository {
     input: Parameters<HabitRepository['settleMissedHabit']>[0],
   ): Promise<HabitSettlementResult> {
     const current = this.occurrences.get(input.occurrence.id);
-    if (current !== undefined && current.status !== 'PENDING') {
+    const currentStatus =
+      current?.status === 'COMPLETED' && current.progressValue < input.habit.targetValue
+        ? 'PENDING'
+        : current?.status;
+    if (current !== undefined && currentStatus !== 'PENDING') {
       return {
         duplicate: true,
         status: current.status,
@@ -120,7 +126,10 @@ export class InMemoryHabitRepository implements HabitRepository {
     }
     const missed: HabitOccurrence = {
       ...(current ?? input.occurrence),
+      targetValue: input.habit.targetValue,
+      unit: input.habit.unit,
       status: 'MISSED',
+      completedAt: undefined,
       missedAt: input.now,
       version: (current?.version ?? 0) + 1,
       updatedAt: input.now,
