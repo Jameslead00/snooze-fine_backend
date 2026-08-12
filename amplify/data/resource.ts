@@ -477,6 +477,7 @@ const schema = a.schema({
     serverTimestamp: a.datetime().required(),
   }),
   AccountabilityStatisticsResult: a.customType({
+    todayNoSnoozeMorning: a.boolean().required(),
     weekSnoozes: a.integer().required(),
     weekWakeUps: a.integer().required(),
     weekNoSnoozeMornings: a.integer().required(),

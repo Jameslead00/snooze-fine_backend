@@ -220,10 +220,15 @@ export class DynamoSyncRepository implements SyncRepository {
         userEnvironment(userId, this.environment),
       )
     ).map(asWake);
+    const todayNoSnoozeMorning = wakes.some(
+      (wake) =>
+        wake.snoozeCount === 0 && localParts(wake.scheduledAt, timezone).date === local.date,
+    );
     const weekWakes = wakes.filter((wake) => wake.completedAt >= weekStart);
     const successfulWeekWakes = weekWakes.filter((wake) => wake.snoozeCount === 0);
     const successfulWakes = wakes.filter((wake) => wake.snoozeCount === 0);
     return {
+      todayNoSnoozeMorning,
       weekSnoozes: weekWakes.reduce((total, wake) => total + wake.snoozeCount, 0),
       weekWakeUps: successfulWeekWakes.length,
       weekNoSnoozeMornings: successfulWeekWakes.length,

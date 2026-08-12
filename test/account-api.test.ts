@@ -253,4 +253,26 @@ describe('earned-point account API', () => {
     });
     expect(subject.earnPoints).not.toHaveBeenCalled();
   });
+
+  it('returns the server-backed completion state for today\'s no-snooze morning', async () => {
+    const subject = repository();
+    vi.mocked(subject.statistics).mockResolvedValue({
+      todayNoSnoozeMorning: true,
+      weekSnoozes: 0,
+      weekWakeUps: 1,
+      weekNoSnoozeMornings: 1,
+      allTimeSnoozes: 0,
+      allTimeWakeUps: 1,
+      allTimeNoSnoozeMornings: 1,
+      timezone: 'Europe/Zurich',
+      serverTimestamp: now,
+    });
+
+    await expect(
+      handleAccountApiEvent(event('getMyAccountabilityStatistics'), subject, now),
+    ).resolves.toMatchObject({
+      todayNoSnoozeMorning: true,
+      earnedPointsTotal: 25,
+    });
+  });
 });

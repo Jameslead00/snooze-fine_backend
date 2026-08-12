@@ -63,6 +63,7 @@ function occurrence(
 
 function statistics(): AccountabilityStatistics {
   return {
+    todayNoSnoozeMorning: true,
     weekSnoozes: 1,
     weekWakeUps: 2,
     weekNoSnoozeMornings: 1,
