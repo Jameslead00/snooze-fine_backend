@@ -54,6 +54,7 @@ export interface RecordWakeCommand {
 }
 
 export interface AccountabilityStatistics {
+  todayNoSnoozeMorning: boolean;
   weekSnoozes: number;
   weekWakeUps: number;
   weekNoSnoozeMornings: number;
