@@ -248,11 +248,18 @@ export function habitViewFromOccurrence(
   awards: AwardConfiguration,
 ): HabitView {
   const scheduledToday = isScheduled(habit, localDate);
+  const todayStatus =
+    occurrence?.status === 'COMPLETED' && occurrence.progressValue < habit.targetValue
+      ? 'PENDING'
+      : (occurrence?.status ?? 'PENDING');
   return {
     ...habit,
     scheduledToday,
     todayProgress: occurrence?.progressValue ?? 0,
-    todayStatus: scheduledToday ? (occurrence?.status ?? 'PENDING') : 'NOT_SCHEDULED',
+    // Habit definitions are editable while occurrences retain the progress
+    // already recorded today. A raised target must reopen an occurrence that
+    // was completed against the former, lower target.
+    todayStatus: scheduledToday ? todayStatus : 'NOT_SCHEDULED',
     todayDueAt: scheduledToday
       ? (occurrence?.dueAt ?? localDeadlineUtc(localDate, habit.deadlineMinutes, habit.timezone))
       : undefined,

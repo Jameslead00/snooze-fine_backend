@@ -87,6 +87,110 @@ describe('Phase 2 habit accountability', () => {
     expect(dashboard[0]?.todayStatus).toBe('COMPLETED');
   });
 
+  it('reopens today when an edited goal exceeds existing completed progress', async () => {
+    const repository = new InMemoryHabitRepository();
+    await waterHabit(repository);
+    await reportHabitProgress(
+      repository,
+      {
+        userId,
+        habitId,
+        progressEventId: '66666666-6666-4666-8666-666666666666',
+        amount: 2_000,
+        occurredAt: '2026-07-31T13:00:00.000Z',
+      },
+      '2026-07-31T13:01:00.000Z',
+    );
+
+    await saveHabit(
+      repository,
+      {
+        userId,
+        habitId,
+        kind: 'WATER',
+        title: 'Drink water',
+        targetValue: 5_000,
+        stepValue: 250,
+        unit: 'MILLILITRES',
+        weekdays: [1, 2, 3, 4, 5, 6, 7],
+        deadlineMinutes: 22 * 60,
+        timezone: 'Europe/Zurich',
+      },
+      '2026-07-31T13:02:00.000Z',
+    );
+
+    const reopened = await habitDashboard(repository, userId, '2026-07-31T13:03:00.000Z');
+    expect(reopened[0]).toMatchObject({
+      targetValue: 5_000,
+      todayProgress: 2_000,
+      todayStatus: 'PENDING',
+    });
+
+    const continued = await reportHabitProgress(
+      repository,
+      {
+        userId,
+        habitId,
+        progressEventId: '77777777-7777-4777-8777-777777777777',
+        amount: 500,
+        occurredAt: '2026-07-31T13:04:00.000Z',
+      },
+      '2026-07-31T13:05:00.000Z',
+    );
+    expect(continued).toMatchObject({
+      completed: false,
+      progressValue: 2_500,
+      targetValue: 5_000,
+      status: 'PENDING',
+    });
+  });
+
+  it('settles a raised unfinished goal instead of preserving its old completion', async () => {
+    const repository = new InMemoryHabitRepository();
+    await waterHabit(repository);
+    await reportHabitProgress(
+      repository,
+      {
+        userId,
+        habitId,
+        progressEventId: '88888888-8888-4888-8888-888888888888',
+        amount: 2_000,
+        occurredAt: '2026-07-31T13:00:00.000Z',
+      },
+      '2026-07-31T13:01:00.000Z',
+    );
+    const raised = await saveHabit(
+      repository,
+      {
+        userId,
+        habitId,
+        kind: 'WATER',
+        title: 'Drink water',
+        targetValue: 5_000,
+        stepValue: 250,
+        unit: 'MILLILITRES',
+        weekdays: [1, 2, 3, 4, 5, 6, 7],
+        deadlineMinutes: 22 * 60,
+        timezone: 'Europe/Zurich',
+      },
+      '2026-07-31T13:02:00.000Z',
+    );
+
+    const result = await settleHabit(
+      repository,
+      raised,
+      '2026-07-31',
+      '2026-07-31T20:01:00.000Z',
+    );
+    expect(result).toMatchObject({ duplicate: false, status: 'MISSED' });
+    expect([...repository.occurrences.values()][0]).toMatchObject({
+      targetValue: 5_000,
+      progressValue: 2_000,
+      status: 'MISSED',
+      completedAt: undefined,
+    });
+  });
+
   it('rejects progress after the local deadline', async () => {
     const repository = new InMemoryHabitRepository();
     await waterHabit(repository);
