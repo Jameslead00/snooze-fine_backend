@@ -22,7 +22,7 @@ const wakeItem = (id: string, scheduledAt: string, snoozeCount: number) => ({
 });
 
 describe('Dynamo sync statistics', () => {
-  it('restores today\'s no-snooze morning using the user\'s local scheduled date', async () => {
+  it("restores today's no-snooze morning using the user's local scheduled date", async () => {
     const send = vi
       .fn()
       .mockResolvedValueOnce({ Item: { timezone: 'Europe/Zurich' } })

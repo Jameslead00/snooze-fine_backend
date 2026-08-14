@@ -26,6 +26,8 @@ import {
   archiveHabit,
   habitDashboard,
   habitView,
+  localParts,
+  reconcileLoweredHabitGoal,
   reportHabitProgress,
   saveHabit,
 } from '../../shared/habits.js';
@@ -75,8 +77,34 @@ export async function handleHabitApiEvent(
   const rateLimitPolicy = rateLimitPolicyFor(event.fieldName);
   if (rateLimitPolicy !== undefined) await rateLimiter.check(userId, rateLimitPolicy);
   switch (event.fieldName) {
-    case 'getMyHabits':
-      return (await habitDashboard(repository, userId, now, awards)).map(publicHabit);
+    case 'getMyHabits': {
+      let dashboard = await habitDashboard(repository, userId, now, awards);
+      const stuck = dashboard.filter(
+        (habit) =>
+          habit.scheduledToday &&
+          habit.todayStatus === 'PENDING' &&
+          habit.todayProgress >= habit.targetValue,
+      );
+      for (const view of stuck) {
+        const habit = await repository.getHabit(userId, view.id);
+        if (habit === undefined) continue;
+        const result = await reconcileLoweredHabitGoal(repository, habit, now);
+        if (result?.completed === true) {
+          if (earnedPoints === undefined) throw new DomainError('EARNED_POINTS_UNAVAILABLE');
+          await earnedPoints.earnPoints(
+            {
+              userId,
+              qualification: 'HABIT_COMPLETION',
+              sourceEventId: `${habit.id}:${result.localDate}`,
+              points: awardPointsForHabit(habit.kind, awards),
+            },
+            now,
+          );
+        }
+      }
+      if (stuck.length > 0) dashboard = await habitDashboard(repository, userId, now, awards);
+      return dashboard.map(publicHabit);
+    }
     case 'saveMyHabit': {
       const input = saveHabitArgumentsSchema.parse(event.arguments.input);
       const saved = await saveHabit(
@@ -88,7 +116,20 @@ export async function handleHabitApiEvent(
         },
         now,
       );
+      await reconcileLoweredHabitGoal(repository, saved, now);
       const view = await habitView(repository, saved, now, awards);
+      if (view.todayStatus === 'COMPLETED') {
+        if (earnedPoints === undefined) throw new DomainError('EARNED_POINTS_UNAVAILABLE');
+        await earnedPoints.earnPoints(
+          {
+            userId,
+            qualification: 'HABIT_COMPLETION',
+            sourceEventId: `${saved.id}:${localParts(now, saved.timezone).date}`,
+            points: awardPointsForHabit(saved.kind, awards),
+          },
+          now,
+        );
+      }
       return publicHabit(view);
     }
     case 'archiveMyHabit': {
