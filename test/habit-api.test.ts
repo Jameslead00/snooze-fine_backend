@@ -210,6 +210,9 @@ describe('habit API', () => {
           WATER: 7,
           READING: 8,
           MEDITATION: 9,
+          STUDY: 10,
+          JOURNALING: 10,
+          STRETCHING: 10,
           BED: 3,
           STEPS: 11,
           CALORIES: 12,
@@ -336,6 +339,38 @@ describe('habit API', () => {
       )) as { kind: string; unit: string; targetValue: number };
 
       expect(result).toMatchObject(metric);
+    }
+  });
+
+  it('accepts the new manual minute habit kinds', async () => {
+    const cases = [
+      { kind: 'STUDY', title: 'Study', targetValue: 30, stepValue: 10 },
+      { kind: 'JOURNALING', title: 'Journal', targetValue: 10, stepValue: 5 },
+      { kind: 'STRETCHING', title: 'Stretch', targetValue: 10, stepValue: 5 },
+    ] as const;
+
+    for (const [index, preset] of cases.entries()) {
+      const repository = new InMemoryHabitRepository();
+      const result = (await handleHabitApiEvent(
+        {
+          fieldName: 'saveMyHabit',
+          arguments: {
+            input: {
+              habitId: `33333333-3333-4333-8333-33333333333${index + 1}`,
+              ...preset,
+              unit: 'MINUTES',
+              weekdays: [1, 2, 3, 4, 5, 6, 7],
+              deadlineMinutes: 1_439,
+              timezone: 'Europe/Zurich',
+            },
+          },
+          identity: { claims: { sub: userId } } as unknown as AppSyncIdentity,
+        },
+        repository,
+        now,
+      )) as { kind: string; title: string; targetValue: number; stepValue: number; unit: string };
+
+      expect(result).toMatchObject({ ...preset, unit: 'MINUTES' });
     }
   });
 });

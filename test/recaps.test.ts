@@ -173,4 +173,25 @@ describe('weekly progress recaps', () => {
     expect(result.periodEnd).toBe('2026-08-03');
     expect(result.includedDays).toBe(1);
   });
+
+  it('includes study, journaling, and stretching in fixed-habit recaps', async () => {
+    const study = habit('study', 'STUDY', [1, 2, 3], 30);
+    const journaling = habit('journaling', 'JOURNALING', [1, 2, 3], 10);
+    const stretching = habit('stretching', 'STRETCHING', [1, 2, 3], 10);
+    const result = await weeklyProgressRecap(
+      repository(
+        [study, journaling, stretching],
+        [
+          occurrence(study, '2026-08-03', 30, 'COMPLETED'),
+          occurrence(journaling, '2026-08-03', 5, 'PENDING'),
+          occurrence(stretching, '2026-08-03', 10, 'COMPLETED'),
+        ],
+      ),
+      userId,
+      now,
+    );
+
+    expect(result.habits.map(({ kind }) => kind)).toEqual(['STUDY', 'JOURNALING', 'STRETCHING']);
+    expect(result).toMatchObject({ promisesScheduled: 9, promisesKept: 2 });
+  });
 });

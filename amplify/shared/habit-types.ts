@@ -4,6 +4,9 @@ export type HabitKind =
   | 'WATER'
   | 'READING'
   | 'MEDITATION'
+  | 'STUDY'
+  | 'JOURNALING'
+  | 'STRETCHING'
   | 'BED'
   | 'STEPS'
   | 'CALORIES'
@@ -106,7 +109,11 @@ export function defaultHabitStepValue(kind: HabitKind): number {
       return 250;
     case 'READING':
     case 'MEDITATION':
+    case 'STUDY':
       return 10;
+    case 'JOURNALING':
+    case 'STRETCHING':
+      return 5;
     case 'BED':
       return 1;
     case 'STEPS':
