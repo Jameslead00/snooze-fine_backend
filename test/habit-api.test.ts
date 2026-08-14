@@ -1,7 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { AppSyncIdentity } from 'aws-lambda';
 import { handleHabitApiEvent } from '../amplify/functions/habit-api/handler.js';
 import { awardConfigurationFromEnvironment } from '../amplify/shared/config.js';
+import type { EarnedPointsRepository } from '../amplify/shared/earned-points-repository.js';
 import { InMemoryHabitRepository } from './support/in-memory-habit-repository.js';
 
 const userId = '11111111-1111-4111-8111-111111111111';
@@ -15,6 +16,23 @@ class EventuallyConsistentHabitRepository extends InMemoryHabitRepository {
 }
 
 describe('habit API', () => {
+  const earnedPoints = () =>
+    ({
+      earnPoints: vi.fn().mockResolvedValue({
+        duplicate: false,
+        pointsEarned: 10,
+        currentPoints: 10,
+        lifetimeEarned: 10,
+        serverTimestamp: now,
+      }),
+      getDisciPointAccount: vi.fn().mockResolvedValue({
+        currentPoints: 0,
+        lifetimeEarned: 0,
+        serverTimestamp: now,
+      }),
+      listPointAwards: vi.fn().mockResolvedValue({ items: [], nextToken: undefined }),
+    }) satisfies EarnedPointsRepository;
+
   it('returns the authoritative saved habit even when the habit GSI is briefly stale', async () => {
     const repository = new EventuallyConsistentHabitRepository();
     const result = (await handleHabitApiEvent(
@@ -96,6 +114,71 @@ describe('habit API', () => {
       }),
     ]);
     expect(habits[0]?.completionAwardPoints).toBeGreaterThan(0);
+  });
+
+  it('completes and awards a pending habit when its saved goal is lowered below progress', async () => {
+    const repository = new InMemoryHabitRepository();
+    const points = earnedPoints();
+    const identity = { claims: { sub: userId } } as unknown as AppSyncIdentity;
+    const input = {
+      habitId,
+      kind: 'SLEEP_MINUTES',
+      title: 'Time asleep',
+      targetValue: 390,
+      stepValue: 1,
+      unit: 'MINUTES',
+      weekdays: [1, 2, 3, 4, 5, 6, 7],
+      deadlineMinutes: 1_439,
+      timezone: 'Europe/Zurich',
+    };
+    await handleHabitApiEvent(
+      { fieldName: 'saveMyHabit', arguments: { input }, identity },
+      repository,
+      now,
+      points,
+    );
+    await handleHabitApiEvent(
+      {
+        fieldName: 'reportHabitProgress',
+        arguments: {
+          input: {
+            habitId,
+            progressEventId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+            amount: 382,
+            occurredAt: '2026-07-31T12:01:00.000Z',
+          },
+        },
+        identity,
+      },
+      repository,
+      '2026-07-31T12:02:00.000Z',
+      points,
+    );
+
+    const result = (await handleHabitApiEvent(
+      {
+        fieldName: 'saveMyHabit',
+        arguments: { input: { ...input, targetValue: 360 } },
+        identity,
+      },
+      repository,
+      '2026-07-31T12:03:00.000Z',
+      points,
+    )) as { todayProgress: number; todayStatus: string; targetValue: number };
+
+    expect(result).toMatchObject({
+      targetValue: 360,
+      todayProgress: 360,
+      todayStatus: 'COMPLETED',
+    });
+    expect(points.earnPoints).toHaveBeenCalledOnce();
+    expect(points.earnPoints).toHaveBeenCalledWith(
+      expect.objectContaining({
+        qualification: 'HABIT_COMPLETION',
+        sourceEventId: `${habitId}:2026-07-31`,
+      }),
+      '2026-07-31T12:03:00.000Z',
+    );
   });
 
   it('surfaces a server-configured award amount in habit views', async () => {

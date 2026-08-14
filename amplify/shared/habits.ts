@@ -280,6 +280,46 @@ export async function habitView(
   return habitViewFromOccurrence(habit, localDate, occurrence, awards);
 }
 
+/**
+ * Complete today's still-pending occurrence when a goal edit moves the target
+ * below progress that was already accepted. The zero-amount event is internal
+ * and deterministic: it asks the repository to re-evaluate the occurrence
+ * against the current definition without inventing additional user progress.
+ */
+export async function reconcileLoweredHabitGoal(
+  repository: HabitRepository,
+  habit: HabitDefinition,
+  now = new Date().toISOString(),
+): Promise<HabitProgressResult | undefined> {
+  const localDate = localParts(now, habit.timezone).date;
+  if (!isScheduled(habit, localDate)) return undefined;
+  const occurrence = (await repository.listOccurrences(habit.userId, localDate)).find(
+    (item) => item.habitId === habit.id,
+  );
+  if (
+    occurrence === undefined ||
+    occurrence.status !== 'PENDING' ||
+    occurrence.progressValue < habit.targetValue ||
+    Date.parse(now) > Date.parse(occurrence.dueAt)
+  ) {
+    return undefined;
+  }
+  return repository.recordHabitProgress({
+    command: {
+      userId: habit.userId,
+      habitId: habit.id,
+      progressEventId: sha256(
+        `habit-goal-reconciliation:${habit.userId}:${habit.id}:${localDate}:${habit.targetValue}`,
+      ),
+      amount: 0,
+      occurredAt: now,
+    },
+    habit,
+    occurrence: occurrenceFor(habit, localDate, now),
+    now,
+  });
+}
+
 export async function reportHabitProgress(
   repository: HabitRepository,
   command: HabitProgressCommand,

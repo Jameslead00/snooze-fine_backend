@@ -5,6 +5,7 @@ import {
   dueLocalDates,
   habitDashboard,
   localDeadlineUtc,
+  reconcileLoweredHabitGoal,
   reportHabitProgress,
   saveHabit,
   settleHabit,
@@ -145,6 +146,50 @@ describe('Phase 2 habit accountability', () => {
     });
   });
 
+  it('completes a pending occurrence when an edited goal drops below accepted progress', async () => {
+    const repository = new InMemoryHabitRepository();
+    const original = await waterHabit(repository);
+    await reportHabitProgress(
+      repository,
+      {
+        userId,
+        habitId,
+        progressEventId: '99999999-9999-4999-8999-999999999999',
+        amount: 1_900,
+        occurredAt: '2026-07-31T13:00:00.000Z',
+      },
+      '2026-07-31T13:01:00.000Z',
+    );
+    const lowered = await saveHabit(
+      repository,
+      {
+        userId,
+        habitId,
+        kind: original.kind as 'WATER',
+        title: original.title,
+        targetValue: 1_800,
+        stepValue: original.stepValue,
+        unit: original.unit,
+        weekdays: original.weekdays,
+        deadlineMinutes: original.deadlineMinutes,
+        timezone: original.timezone,
+      },
+      '2026-07-31T13:02:00.000Z',
+    );
+
+    const result = await reconcileLoweredHabitGoal(repository, lowered, '2026-07-31T13:03:00.000Z');
+    const retry = await reconcileLoweredHabitGoal(repository, lowered, '2026-07-31T13:04:00.000Z');
+    const dashboard = await habitDashboard(repository, userId, '2026-07-31T13:05:00.000Z');
+
+    expect(result).toMatchObject({ completed: true, progressValue: 1_800 });
+    expect(retry).toBeUndefined();
+    expect(dashboard[0]).toMatchObject({
+      targetValue: 1_800,
+      todayProgress: 1_800,
+      todayStatus: 'COMPLETED',
+    });
+  });
+
   it('settles a raised unfinished goal instead of preserving its old completion', async () => {
     const repository = new InMemoryHabitRepository();
     await waterHabit(repository);
@@ -176,12 +221,7 @@ describe('Phase 2 habit accountability', () => {
       '2026-07-31T13:02:00.000Z',
     );
 
-    const result = await settleHabit(
-      repository,
-      raised,
-      '2026-07-31',
-      '2026-07-31T20:01:00.000Z',
-    );
+    const result = await settleHabit(repository, raised, '2026-07-31', '2026-07-31T20:01:00.000Z');
     expect(result).toMatchObject({ duplicate: false, status: 'MISSED' });
     expect([...repository.occurrences.values()][0]).toMatchObject({
       targetValue: 5_000,

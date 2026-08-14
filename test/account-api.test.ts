@@ -254,7 +254,7 @@ describe('earned-point account API', () => {
     expect(subject.earnPoints).not.toHaveBeenCalled();
   });
 
-  it('returns the server-backed completion state for today\'s no-snooze morning', async () => {
+  it("returns the server-backed completion state for today's no-snooze morning", async () => {
     const subject = repository();
     vi.mocked(subject.statistics).mockResolvedValue({
       todayNoSnoozeMorning: true,
