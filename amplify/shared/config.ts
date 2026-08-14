@@ -9,6 +9,9 @@ export type SupportedHabitKind =
   | 'WATER'
   | 'READING'
   | 'MEDITATION'
+  | 'STUDY'
+  | 'JOURNALING'
+  | 'STRETCHING'
   | 'BED'
   | 'STEPS'
   | 'CALORIES'
@@ -27,6 +30,9 @@ const DEFAULT_AWARDS: AwardConfiguration = {
     WATER: 10,
     READING: 10,
     MEDITATION: 10,
+    STUDY: 10,
+    JOURNALING: 10,
+    STRETCHING: 10,
     BED: 10,
     STEPS: 10,
     CALORIES: 10,
@@ -43,6 +49,9 @@ const awardEnvironmentNames: Record<'wakeCompletion' | SupportedHabitKind, strin
   WATER: 'SNOOZEFINE_AWARD_HABIT_WATER',
   READING: 'SNOOZEFINE_AWARD_HABIT_READING',
   MEDITATION: 'SNOOZEFINE_AWARD_HABIT_MEDITATION',
+  STUDY: 'SNOOZEFINE_AWARD_HABIT_STUDY',
+  JOURNALING: 'SNOOZEFINE_AWARD_HABIT_JOURNALING',
+  STRETCHING: 'SNOOZEFINE_AWARD_HABIT_STRETCHING',
   BED: 'SNOOZEFINE_AWARD_HABIT_BED',
   STEPS: 'SNOOZEFINE_AWARD_HABIT_STEPS',
   CALORIES: 'SNOOZEFINE_AWARD_HABIT_CALORIES',
@@ -76,6 +85,9 @@ export function awardConfigurationFromEnvironment(
       WATER: parse('WATER', DEFAULT_AWARDS.habits.WATER),
       READING: parse('READING', DEFAULT_AWARDS.habits.READING),
       MEDITATION: parse('MEDITATION', DEFAULT_AWARDS.habits.MEDITATION),
+      STUDY: parse('STUDY', DEFAULT_AWARDS.habits.STUDY),
+      JOURNALING: parse('JOURNALING', DEFAULT_AWARDS.habits.JOURNALING),
+      STRETCHING: parse('STRETCHING', DEFAULT_AWARDS.habits.STRETCHING),
       BED: parse('BED', DEFAULT_AWARDS.habits.BED),
       STEPS: parse('STEPS', DEFAULT_AWARDS.habits.STEPS),
       CALORIES: parse('CALORIES', DEFAULT_AWARDS.habits.CALORIES),
@@ -95,6 +107,9 @@ export const awardEnvironmentDefaults = (): Record<string, string> => ({
   [awardEnvironmentNames.WATER]: String(DEFAULT_AWARDS.habits.WATER),
   [awardEnvironmentNames.READING]: String(DEFAULT_AWARDS.habits.READING),
   [awardEnvironmentNames.MEDITATION]: String(DEFAULT_AWARDS.habits.MEDITATION),
+  [awardEnvironmentNames.STUDY]: String(DEFAULT_AWARDS.habits.STUDY),
+  [awardEnvironmentNames.JOURNALING]: String(DEFAULT_AWARDS.habits.JOURNALING),
+  [awardEnvironmentNames.STRETCHING]: String(DEFAULT_AWARDS.habits.STRETCHING),
   [awardEnvironmentNames.BED]: String(DEFAULT_AWARDS.habits.BED),
   [awardEnvironmentNames.STEPS]: String(DEFAULT_AWARDS.habits.STEPS),
   [awardEnvironmentNames.CALORIES]: String(DEFAULT_AWARDS.habits.CALORIES),
