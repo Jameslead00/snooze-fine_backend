@@ -83,7 +83,10 @@ export class InMemoryHabitRepository implements HabitRepository {
       return this.progressResult(prior, true, input.now);
     }
     const current = this.occurrences.get(input.occurrence.id);
-    if (current?.status === 'MISSED' || current?.status === 'SKIPPED_INELIGIBLE') {
+    if (
+      (current?.status === 'MISSED' && input.allowMissedReopen !== true) ||
+      current?.status === 'SKIPPED_INELIGIBLE'
+    ) {
       throw new DomainError('HABIT_ALREADY_SETTLED');
     }
     const progressValue = Math.min(
@@ -98,6 +101,7 @@ export class InMemoryHabitRepository implements HabitRepository {
       progressValue,
       status: completed ? 'COMPLETED' : 'PENDING',
       completedAt: completed ? (current?.completedAt ?? input.command.occurredAt) : undefined,
+      missedAt: undefined,
       version: (current?.version ?? 0) + 1,
       updatedAt: input.now,
     };

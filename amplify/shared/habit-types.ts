@@ -76,6 +76,11 @@ export interface HabitProgressCommand {
   progressEventId: string;
   amount: number;
   occurredAt: string;
+  /**
+   * The server-issued calendar date the progress belongs to. Older clients
+   * omit this and retain the original occurredAt-derived, today-only flow.
+   */
+  targetLocalDate?: string | undefined;
 }
 
 export interface HabitProgressResult {
@@ -99,6 +104,17 @@ export interface HabitView extends HabitDefinition {
   todayProgress: number;
   todayStatus: HabitOccurrenceStatus | 'NOT_SCHEDULED';
   todayDueAt: string | undefined;
+  /** Fixed server-configured points earned after a successful completion. */
+  completionAwardPoints: number;
+}
+
+export interface HabitDayView extends HabitDefinition {
+  localDate: string;
+  progressValue: number;
+  status: HabitOccurrenceStatus;
+  dueAt: string;
+  editableUntil: string;
+  editable: boolean;
   /** Fixed server-configured points earned after a successful completion. */
   completionAwardPoints: number;
 }

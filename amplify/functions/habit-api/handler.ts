@@ -25,6 +25,7 @@ import {
 import {
   archiveHabit,
   habitDashboard,
+  habitDay,
   habitView,
   localParts,
   reconcileLoweredHabitGoal,
@@ -35,6 +36,7 @@ import { defaultHabitStepValue } from '../../shared/habit-types.js';
 import type { HabitRepository } from '../../shared/habit-repository.js';
 import {
   habitIdArgumentsSchema,
+  habitDayArgumentsSchema,
   habitProgressArgumentsSchema,
   saveHabitArgumentsSchema,
 } from '../../shared/validation.js';
@@ -60,6 +62,28 @@ const publicHabit = (habit: Awaited<ReturnType<typeof habitDashboard>>[number]) 
   todayProgress: habit.todayProgress,
   todayStatus: habit.todayStatus,
   todayDueAt: habit.todayDueAt,
+  completionAwardPoints: habit.completionAwardPoints,
+  createdAt: habit.createdAt,
+  updatedAt: habit.updatedAt,
+});
+
+const publicDayHabit = (habit: Awaited<ReturnType<typeof habitDay>>[number]) => ({
+  id: habit.id,
+  kind: habit.kind,
+  title: habit.title,
+  targetValue: habit.targetValue,
+  stepValue: habit.stepValue,
+  unit: habit.unit,
+  weekdays: habit.weekdays,
+  deadlineMinutes: habit.deadlineMinutes,
+  timezone: habit.timezone,
+  activeState: habit.activeState,
+  localDate: habit.localDate,
+  progressValue: habit.progressValue,
+  status: habit.status,
+  dueAt: habit.dueAt,
+  editableUntil: habit.editableUntil,
+  editable: habit.editable,
   completionAwardPoints: habit.completionAwardPoints,
   createdAt: habit.createdAt,
   updatedAt: habit.updatedAt,
@@ -104,6 +128,15 @@ export async function handleHabitApiEvent(
       }
       if (stuck.length > 0) dashboard = await habitDashboard(repository, userId, now, awards);
       return dashboard.map(publicHabit);
+    }
+    case 'getMyHabitDay': {
+      const input = habitDayArgumentsSchema.parse(event.arguments);
+      const habits = await habitDay(repository, userId, input.dayOffset, now, awards);
+      return {
+        dayOffset: input.dayOffset,
+        habits: habits.map(publicDayHabit),
+        serverTimestamp: now,
+      };
     }
     case 'saveMyHabit': {
       const input = saveHabitArgumentsSchema.parse(event.arguments.input);

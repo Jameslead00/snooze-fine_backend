@@ -3,6 +3,7 @@ import type { AppSyncIdentity } from 'aws-lambda';
 import { handleHabitApiEvent } from '../amplify/functions/habit-api/handler.js';
 import { awardConfigurationFromEnvironment } from '../amplify/shared/config.js';
 import type { EarnedPointsRepository } from '../amplify/shared/earned-points-repository.js';
+import { settleHabit } from '../amplify/shared/habits.js';
 import { InMemoryHabitRepository } from './support/in-memory-habit-repository.js';
 
 const userId = '11111111-1111-4111-8111-111111111111';
@@ -114,6 +115,80 @@ describe('habit API', () => {
       }),
     ]);
     expect(habits[0]?.completionAwardPoints).toBeGreaterThan(0);
+  });
+
+  it('returns and completes yesterday while keeping the account award date-scoped', async () => {
+    const repository = new InMemoryHabitRepository();
+    const points = earnedPoints();
+    const identity = { claims: { sub: userId } } as unknown as AppSyncIdentity;
+    await handleHabitApiEvent(
+      {
+        fieldName: 'saveMyHabit',
+        arguments: {
+          input: {
+            habitId,
+            kind: 'BED',
+            title: 'Making the bed',
+            targetValue: 1,
+            stepValue: 1,
+            unit: 'CHECKMARK',
+            weekdays: [1, 2, 3, 4, 5, 6, 7],
+            deadlineMinutes: 1_439,
+            timezone: 'Europe/Zurich',
+          },
+        },
+        identity,
+      },
+      repository,
+      now,
+      points,
+    );
+    const habit = repository.habits.get(habitId);
+    expect(habit).toBeDefined();
+    await settleHabit(repository, habit!, '2026-07-31', '2026-07-31T22:00:00.000Z');
+
+    const day = (await handleHabitApiEvent(
+      { fieldName: 'getMyHabitDay', arguments: { dayOffset: -1 }, identity },
+      repository,
+      '2026-08-01T12:00:00.000Z',
+      points,
+    )) as {
+      dayOffset: number;
+      habits: Array<{ localDate: string; status: string; editable: boolean }>;
+    };
+    expect(day).toMatchObject({
+      dayOffset: -1,
+      habits: [{ localDate: '2026-07-31', status: 'MISSED', editable: true }],
+    });
+
+    const result = (await handleHabitApiEvent(
+      {
+        fieldName: 'reportHabitProgress',
+        arguments: {
+          input: {
+            habitId,
+            progressEventId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+            amount: 1,
+            occurredAt: '2026-08-01T12:01:00.000Z',
+            targetLocalDate: '2026-07-31',
+          },
+        },
+        identity,
+      },
+      repository,
+      '2026-08-01T12:02:00.000Z',
+      points,
+    )) as { completed: boolean; localDate: string; earnedPointsTotal: number };
+
+    expect(result).toMatchObject({
+      completed: true,
+      localDate: '2026-07-31',
+      earnedPointsTotal: 10,
+    });
+    expect(points.earnPoints).toHaveBeenCalledWith(
+      expect.objectContaining({ sourceEventId: `${habitId}:2026-07-31` }),
+      '2026-08-01T12:02:00.000Z',
+    );
   });
 
   it('completes and awards a pending habit when its saved goal is lowered below progress', async () => {

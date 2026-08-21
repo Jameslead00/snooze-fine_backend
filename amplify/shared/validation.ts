@@ -164,11 +164,16 @@ export const habitIdArgumentsSchema = z.object({
   habitId: z.string().uuid(),
 });
 
+export const habitDayArgumentsSchema = z.object({
+  dayOffset: z.number().int().min(-1).max(0),
+});
+
 export const habitProgressArgumentsSchema = z.object({
   habitId: z.string().uuid(),
   progressEventId: z.string().uuid(),
   amount: z.number().int().min(1).max(100_000),
   occurredAt: z.iso.datetime({ offset: true }),
+  targetLocalDate: z.iso.date().optional(),
 });
 
 export const saveSyncedAlarmArgumentsSchema = z.object({
