@@ -413,6 +413,33 @@ const schema = a.schema({
     createdAt: a.datetime().required(),
     updatedAt: a.datetime().required(),
   }),
+  HabitDayItemResult: a.customType({
+    id: a.id().required(),
+    kind: a.string().required(),
+    title: a.string().required(),
+    targetValue: a.integer().required(),
+    stepValue: a.integer().required(),
+    unit: a.string().required(),
+    weekdays: a.integer().array().required(),
+    deadlineMinutes: a.integer().required(),
+    timezone: a.string().required(),
+    activeState: a.string().required(),
+    localDate: a.date().required(),
+    progressValue: a.integer().required(),
+    status: a.string().required(),
+    dueAt: a.datetime().required(),
+    editableUntil: a.datetime().required(),
+    editable: a.boolean().required(),
+    completionAwardPoints: a.integer().required(),
+    createdAt: a.datetime().required(),
+    updatedAt: a.datetime().required(),
+  }),
+  HabitDayResult: a.customType({
+    dayOffset: a.integer().required(),
+    habits: a.ref('HabitDayItemResult').array().required(),
+    noSnoozeMorning: a.boolean().required(),
+    serverTimestamp: a.datetime().required(),
+  }),
   ArchiveHabitResult: a.customType({
     id: a.id().required(),
     archived: a.boolean().required(),
@@ -423,6 +450,7 @@ const schema = a.schema({
     progressEventId: a.id().required(),
     amount: a.integer().required(),
     occurredAt: a.datetime().required(),
+    targetLocalDate: a.date(),
   }),
   HabitProgressResult: a.customType({
     accepted: a.boolean().required(),
@@ -644,6 +672,13 @@ const schema = a.schema({
   getMyHabits: a
     .query()
     .returns(a.ref('HabitResult').array())
+    .authorization((allow) => [allow.authenticated()])
+    .handler(a.handler.function(habitApiFunction)),
+
+  getMyHabitDay: a
+    .query()
+    .arguments({ dayOffset: a.integer().required() })
+    .returns(a.ref('HabitDayResult'))
     .authorization((allow) => [allow.authenticated()])
     .handler(a.handler.function(habitApiFunction)),
 

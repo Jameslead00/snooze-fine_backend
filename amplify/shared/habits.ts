@@ -4,6 +4,7 @@ import { awardConfigurationFromEnvironment } from './config.js';
 import type { HabitRepository } from './habit-repository.js';
 import type {
   HabitDefinition,
+  HabitDayView,
   HabitOccurrence,
   HabitProgressCommand,
   HabitProgressResult,
@@ -111,9 +112,28 @@ export function localDeadlineUtc(
 }
 
 export function isScheduled(habit: HabitDefinition, localDate: string): boolean {
-  if (localDate < habit.startDate || habit.activeState !== 'ACTIVE') return false;
+  if (habit.activeState !== 'ACTIVE') return false;
+  return scheduleMatches(habit, localDate);
+}
+
+function scheduleMatches(habit: HabitDefinition, localDate: string): boolean {
+  if (localDate < habit.startDate) return false;
   const midday = localDeadlineUtc(localDate, 12 * 60, habit.timezone);
   return habit.weekdays.includes(localParts(midday, habit.timezone).weekday);
+}
+
+export function shiftedLocalDate(localDate: string, dayOffset: number): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(localDate);
+  if (match === null || !Number.isInteger(dayOffset)) throw new DomainError('INVALID_LOCAL_DATE');
+  const shifted = new Date(
+    Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]) + dayOffset, 12),
+  );
+  return shifted.toISOString().slice(0, 10);
+}
+
+export function localDayEndUtc(localDate: string, timezone: string): string {
+  const nextMidnight = localDeadlineUtc(shiftedLocalDate(localDate, 1), 0, timezone);
+  return new Date(Date.parse(nextMidnight) - 1).toISOString();
 }
 
 export function occurrenceFor(
@@ -225,15 +245,81 @@ export async function habitDashboard(
   const occurrences = (
     await Promise.all([...dates].map((date) => repository.listOccurrences(userId, date)))
   ).flat();
-  const occurrenceByHabit = new Map(occurrences.map((item) => [item.habitId, item]));
-  return habits.map((habit) =>
-    habitViewFromOccurrence(
-      habit,
-      localParts(now, habit.timezone).date,
-      occurrenceByHabit.get(habit.id),
-      awards,
-    ),
+  const occurrenceByHabitAndDate = new Map(
+    occurrences.map((item) => [`${item.habitId}:${item.localDate}`, item]),
   );
+  return habits.map((habit) => {
+    const localDate = localParts(now, habit.timezone).date;
+    return habitViewFromOccurrence(
+      habit,
+      localDate,
+      occurrenceByHabitAndDate.get(`${habit.id}:${localDate}`),
+      awards,
+    );
+  });
+}
+
+/**
+ * Returns the server-authoritative habit occurrence projection for today or
+ * yesterday. Yesterday's stored occurrence owns its historical target/unit so
+ * a definition edit made today cannot rewrite the prior commitment.
+ */
+export async function habitDay(
+  repository: HabitRepository,
+  userId: string,
+  dayOffset: number,
+  now = new Date().toISOString(),
+  awards: AwardConfiguration = awardConfigurationFromEnvironment(),
+): Promise<HabitDayView[]> {
+  if (dayOffset !== 0 && dayOffset !== -1) throw new DomainError('HABIT_DAY_OUT_OF_RANGE');
+  const habits = await repository.listHabits(userId);
+  const dates = new Set(
+    habits.map((habit) => shiftedLocalDate(localParts(now, habit.timezone).date, dayOffset)),
+  );
+  const occurrences = (
+    await Promise.all([...dates].map((date) => repository.listOccurrences(userId, date)))
+  ).flat();
+  const occurrenceByHabitAndDate = new Map(
+    occurrences.map((item) => [`${item.habitId}:${item.localDate}`, item]),
+  );
+
+  return habits.flatMap((habit): HabitDayView[] => {
+    const todayLocalDate = localParts(now, habit.timezone).date;
+    const localDate = shiftedLocalDate(todayLocalDate, dayOffset);
+    const occurrence = occurrenceByHabitAndDate.get(`${habit.id}:${localDate}`);
+    const scheduled = occurrence !== undefined || isScheduled(habit, localDate);
+    if (!scheduled) return [];
+
+    const targetValue =
+      dayOffset === -1 ? (occurrence?.targetValue ?? habit.targetValue) : habit.targetValue;
+    const unit = dayOffset === -1 ? (occurrence?.unit ?? habit.unit) : habit.unit;
+    const progressValue = occurrence?.progressValue ?? 0;
+    const storedStatus = occurrence?.status ?? 'PENDING';
+    const status =
+      storedStatus === 'COMPLETED' && progressValue < targetValue ? 'PENDING' : storedStatus;
+    const dueAt =
+      occurrence?.dueAt ?? localDeadlineUtc(localDate, habit.deadlineMinutes, habit.timezone);
+    const editableUntil = dayOffset === -1 ? localDayEndUtc(todayLocalDate, habit.timezone) : dueAt;
+    const editable =
+      status !== 'COMPLETED' &&
+      status !== 'SKIPPED_INELIGIBLE' &&
+      Date.parse(now) <= Date.parse(editableUntil);
+
+    return [
+      {
+        ...habit,
+        targetValue,
+        unit,
+        localDate,
+        progressValue,
+        status,
+        dueAt,
+        editableUntil,
+        editable,
+        completionAwardPoints: awardPointsForHabit(habit.kind, awards),
+      },
+    ];
+  });
 }
 
 /**
@@ -326,8 +412,7 @@ export async function reportHabitProgress(
   now = new Date().toISOString(),
 ): Promise<HabitProgressResult> {
   const habit = await repository.getHabit(command.userId, command.habitId);
-  if (habit === undefined || habit.activeState !== 'ACTIVE')
-    throw new DomainError('HABIT_NOT_FOUND');
+  if (habit === undefined) throw new DomainError('HABIT_NOT_FOUND');
   if (!Number.isInteger(command.amount) || command.amount < 1 || command.amount > 100_000) {
     throw new DomainError('INVALID_HABIT_PROGRESS');
   }
@@ -337,12 +422,43 @@ export async function reportHabitProgress(
   if (occurredAt > serverTime + 5 * 60 * 1_000 || occurredAt < serverTime - 24 * 60 * 60 * 1_000) {
     throw new DomainError('INVALID_PROGRESS_TIME');
   }
-  const localDate = localParts(command.occurredAt, habit.timezone).date;
-  if (!isScheduled(habit, localDate)) throw new DomainError('HABIT_NOT_SCHEDULED');
-  const occurrence = occurrenceFor(habit, localDate, now);
-  if (Date.parse(now) > Date.parse(occurrence.dueAt))
-    throw new DomainError('HABIT_DEADLINE_PASSED');
-  return repository.recordHabitProgress({ command, habit, occurrence, now });
+  const todayLocalDate = localParts(now, habit.timezone).date;
+  const yesterdayLocalDate = shiftedLocalDate(todayLocalDate, -1);
+  const localDate = command.targetLocalDate ?? localParts(command.occurredAt, habit.timezone).date;
+  const isDateAwareRequest = command.targetLocalDate !== undefined;
+  const isYesterday = isDateAwareRequest && localDate === yesterdayLocalDate;
+  if (isDateAwareRequest && localDate !== todayLocalDate && !isYesterday) {
+    throw new DomainError('HABIT_DAY_OUT_OF_RANGE');
+  }
+
+  const storedOccurrence = (await repository.listOccurrences(command.userId, localDate)).find(
+    (item) => item.habitId === habit.id,
+  );
+  const scheduled =
+    isScheduled(habit, localDate) ||
+    (isYesterday &&
+      storedOccurrence !== undefined &&
+      storedOccurrence.status !== 'SKIPPED_INELIGIBLE');
+  if (!scheduled) throw new DomainError('HABIT_NOT_SCHEDULED');
+
+  // Yesterday uses the occurrence's target snapshot. Today and legacy clients
+  // intentionally keep the current definition reconciliation behavior.
+  const effectiveHabit =
+    isYesterday && storedOccurrence !== undefined
+      ? { ...habit, targetValue: storedOccurrence.targetValue, unit: storedOccurrence.unit }
+      : habit;
+  const occurrence = storedOccurrence ?? occurrenceFor(effectiveHabit, localDate, now);
+  const editableUntil = isYesterday
+    ? localDayEndUtc(todayLocalDate, habit.timezone)
+    : occurrence.dueAt;
+  if (Date.parse(now) > Date.parse(editableUntil)) throw new DomainError('HABIT_DEADLINE_PASSED');
+  return repository.recordHabitProgress({
+    command,
+    habit: effectiveHabit,
+    occurrence,
+    now,
+    allowMissedReopen: isYesterday,
+  });
 }
 
 export function dueLocalDates(habit: HabitDefinition, now: string, lookbackDays = 35): string[] {

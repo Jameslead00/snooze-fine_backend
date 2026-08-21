@@ -3,12 +3,15 @@ import { DomainError } from '../amplify/shared/domain.js';
 import {
   archiveHabit,
   dueLocalDates,
+  habitDay,
+  localDayEndUtc,
   habitDashboard,
   localDeadlineUtc,
   reconcileLoweredHabitGoal,
   reportHabitProgress,
   saveHabit,
   settleHabit,
+  shiftedLocalDate,
 } from '../amplify/shared/habits.js';
 import { InMemoryHabitRepository } from './support/in-memory-habit-repository.js';
 
@@ -273,5 +276,130 @@ describe('Phase 2 habit accountability', () => {
     );
     expect(dueLocalDates(habit, '2026-07-31T19:59:00.000Z')).not.toContain('2026-07-31');
     expect(dueLocalDates(habit, '2026-07-31T20:00:00.000Z')).toContain('2026-07-31');
+  });
+
+  it('returns yesterday with its stored target and a one-day editing window', async () => {
+    const repository = new InMemoryHabitRepository();
+    const original = await waterHabit(repository);
+    await settleHabit(repository, original, '2026-07-31', '2026-07-31T20:01:00.000Z');
+    await saveHabit(
+      repository,
+      {
+        userId,
+        habitId,
+        kind: 'WATER',
+        title: 'Drink more water',
+        targetValue: 5_000,
+        stepValue: 500,
+        unit: 'MILLILITRES',
+        weekdays: [1, 2, 3, 4, 5, 6, 7],
+        deadlineMinutes: 22 * 60,
+        timezone: 'Europe/Zurich',
+      },
+      '2026-08-01T08:00:00.000Z',
+    );
+
+    const yesterday = await habitDay(repository, userId, -1, '2026-08-01T12:00:00.000Z');
+
+    expect(yesterday).toEqual([
+      expect.objectContaining({
+        id: habitId,
+        localDate: '2026-07-31',
+        targetValue: 2_000,
+        progressValue: 0,
+        status: 'MISSED',
+        editable: true,
+        editableUntil: '2026-08-01T21:59:59.999Z',
+      }),
+    ]);
+  });
+
+  it('reopens and completes yesterday without changing its historical target', async () => {
+    const repository = new InMemoryHabitRepository();
+    const original = await waterHabit(repository);
+    await settleHabit(repository, original, '2026-07-31', '2026-07-31T20:01:00.000Z');
+    await saveHabit(
+      repository,
+      {
+        userId,
+        habitId,
+        kind: 'WATER',
+        title: 'Drink more water',
+        targetValue: 5_000,
+        stepValue: 500,
+        unit: 'MILLILITRES',
+        weekdays: [1, 2, 3, 4, 5, 6, 7],
+        deadlineMinutes: 22 * 60,
+        timezone: 'Europe/Zurich',
+      },
+      '2026-08-01T08:00:00.000Z',
+    );
+
+    const result = await reportHabitProgress(
+      repository,
+      {
+        userId,
+        habitId,
+        progressEventId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        amount: 2_000,
+        occurredAt: '2026-08-01T12:00:00.000Z',
+        targetLocalDate: '2026-07-31',
+      },
+      '2026-08-01T12:01:00.000Z',
+    );
+
+    expect(result).toMatchObject({
+      completed: true,
+      localDate: '2026-07-31',
+      targetValue: 2_000,
+      progressValue: 2_000,
+      status: 'COMPLETED',
+    });
+    expect(repository.occurrences.values().next().value).toMatchObject({
+      missedAt: undefined,
+      completedAt: '2026-08-01T12:00:00.000Z',
+    });
+  });
+
+  it('rejects dates outside today and yesterday and includes the full grace day', async () => {
+    const repository = new InMemoryHabitRepository();
+    const habit = await waterHabit(repository);
+    await settleHabit(repository, habit, '2026-07-31', '2026-07-31T20:01:00.000Z');
+
+    await expect(
+      reportHabitProgress(
+        repository,
+        {
+          userId,
+          habitId,
+          progressEventId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+          amount: 250,
+          occurredAt: '2026-08-01T12:00:00.000Z',
+          targetLocalDate: '2026-07-30',
+        },
+        '2026-08-01T12:01:00.000Z',
+      ),
+    ).rejects.toMatchObject({ code: 'HABIT_DAY_OUT_OF_RANGE' });
+
+    const acceptedAtEndOfDay = await reportHabitProgress(
+      repository,
+      {
+        userId,
+        habitId,
+        progressEventId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+        amount: 250,
+        occurredAt: '2026-08-01T21:59:30.000Z',
+        targetLocalDate: '2026-07-31',
+      },
+      '2026-08-01T21:59:30.000Z',
+    );
+    expect(acceptedAtEndOfDay).toMatchObject({ localDate: '2026-07-31', progressValue: 250 });
+  });
+
+  it('uses calendar date arithmetic across daylight-saving boundaries', () => {
+    expect(shiftedLocalDate('2026-03-30', -1)).toBe('2026-03-29');
+    expect(shiftedLocalDate('2026-11-01', -1)).toBe('2026-10-31');
+    expect(localDayEndUtc('2026-03-29', 'Europe/Zurich')).toBe('2026-03-29T21:59:59.999Z');
+    expect(localDayEndUtc('2026-10-25', 'Europe/Zurich')).toBe('2026-10-25T22:59:59.999Z');
   });
 });

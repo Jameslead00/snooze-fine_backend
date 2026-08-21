@@ -25,6 +25,7 @@ import {
 import {
   archiveHabit,
   habitDashboard,
+  habitDay,
   habitView,
   localParts,
   reconcileLoweredHabitGoal,
@@ -34,7 +35,13 @@ import {
 import { defaultHabitStepValue } from '../../shared/habit-types.js';
 import type { HabitRepository } from '../../shared/habit-repository.js';
 import {
+  DynamoSyncRepository,
+  syncTableNamesFromEnvironment,
+} from '../../shared/dynamo-sync-repository.js';
+import type { SyncRepository } from '../../shared/sync-repository.js';
+import {
   habitIdArgumentsSchema,
+  habitDayArgumentsSchema,
   habitProgressArgumentsSchema,
   saveHabitArgumentsSchema,
 } from '../../shared/validation.js';
@@ -65,6 +72,28 @@ const publicHabit = (habit: Awaited<ReturnType<typeof habitDashboard>>[number]) 
   updatedAt: habit.updatedAt,
 });
 
+const publicDayHabit = (habit: Awaited<ReturnType<typeof habitDay>>[number]) => ({
+  id: habit.id,
+  kind: habit.kind,
+  title: habit.title,
+  targetValue: habit.targetValue,
+  stepValue: habit.stepValue,
+  unit: habit.unit,
+  weekdays: habit.weekdays,
+  deadlineMinutes: habit.deadlineMinutes,
+  timezone: habit.timezone,
+  activeState: habit.activeState,
+  localDate: habit.localDate,
+  progressValue: habit.progressValue,
+  status: habit.status,
+  dueAt: habit.dueAt,
+  editableUntil: habit.editableUntil,
+  editable: habit.editable,
+  completionAwardPoints: habit.completionAwardPoints,
+  createdAt: habit.createdAt,
+  updatedAt: habit.updatedAt,
+});
+
 export async function handleHabitApiEvent(
   event: HabitApiEvent,
   repository: HabitRepository,
@@ -72,6 +101,7 @@ export async function handleHabitApiEvent(
   earnedPoints?: EarnedPointsRepository,
   awards: AwardConfiguration = awardConfigurationFromEnvironment(),
   rateLimiter: RateLimiter = new NoopRateLimiter(),
+  syncRepository?: Pick<SyncRepository, 'statistics'>,
 ): Promise<unknown> {
   const userId = cognitoSub(event.identity);
   const rateLimitPolicy = rateLimitPolicyFor(event.fieldName);
@@ -104,6 +134,21 @@ export async function handleHabitApiEvent(
       }
       if (stuck.length > 0) dashboard = await habitDashboard(repository, userId, now, awards);
       return dashboard.map(publicHabit);
+    }
+    case 'getMyHabitDay': {
+      const input = habitDayArgumentsSchema.parse(event.arguments);
+      const habits = await habitDay(repository, userId, input.dayOffset, now, awards);
+      const statisticsNow = new Date(
+        Date.parse(now) + input.dayOffset * 24 * 60 * 60 * 1_000,
+      ).toISOString();
+      const noSnoozeMorning =
+        (await syncRepository?.statistics(userId, statisticsNow))?.todayNoSnoozeMorning ?? false;
+      return {
+        dayOffset: input.dayOffset,
+        habits: habits.map(publicDayHabit),
+        noSnoozeMorning,
+        serverTimestamp: now,
+      };
     }
     case 'saveMyHabit': {
       const input = saveHabitArgumentsSchema.parse(event.arguments.input);
@@ -185,6 +230,10 @@ export const handler = async (event: HabitApiEvent): Promise<unknown> => {
     earnedPointsTableNamesFromEnvironment(),
     configuredEnvironment(),
   );
+  const syncRepository = new DynamoSyncRepository(
+    syncTableNamesFromEnvironment(),
+    configuredEnvironment(),
+  );
   return handleHabitApiEvent(
     event,
     repository,
@@ -192,5 +241,6 @@ export const handler = async (event: HabitApiEvent): Promise<unknown> => {
     earnedPoints,
     awardConfigurationFromEnvironment(),
     new DynamoRateLimiter(),
+    syncRepository,
   );
 };
