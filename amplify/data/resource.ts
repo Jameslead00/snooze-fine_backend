@@ -437,6 +437,7 @@ const schema = a.schema({
   HabitDayResult: a.customType({
     dayOffset: a.integer().required(),
     habits: a.ref('HabitDayItemResult').array().required(),
+    noSnoozeMorning: a.boolean().required(),
     serverTimestamp: a.datetime().required(),
   }),
   ArchiveHabitResult: a.customType({

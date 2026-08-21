@@ -35,6 +35,11 @@ import {
 import { defaultHabitStepValue } from '../../shared/habit-types.js';
 import type { HabitRepository } from '../../shared/habit-repository.js';
 import {
+  DynamoSyncRepository,
+  syncTableNamesFromEnvironment,
+} from '../../shared/dynamo-sync-repository.js';
+import type { SyncRepository } from '../../shared/sync-repository.js';
+import {
   habitIdArgumentsSchema,
   habitDayArgumentsSchema,
   habitProgressArgumentsSchema,
@@ -96,6 +101,7 @@ export async function handleHabitApiEvent(
   earnedPoints?: EarnedPointsRepository,
   awards: AwardConfiguration = awardConfigurationFromEnvironment(),
   rateLimiter: RateLimiter = new NoopRateLimiter(),
+  syncRepository?: Pick<SyncRepository, 'statistics'>,
 ): Promise<unknown> {
   const userId = cognitoSub(event.identity);
   const rateLimitPolicy = rateLimitPolicyFor(event.fieldName);
@@ -132,9 +138,15 @@ export async function handleHabitApiEvent(
     case 'getMyHabitDay': {
       const input = habitDayArgumentsSchema.parse(event.arguments);
       const habits = await habitDay(repository, userId, input.dayOffset, now, awards);
+      const statisticsNow = new Date(
+        Date.parse(now) + input.dayOffset * 24 * 60 * 60 * 1_000,
+      ).toISOString();
+      const noSnoozeMorning =
+        (await syncRepository?.statistics(userId, statisticsNow))?.todayNoSnoozeMorning ?? false;
       return {
         dayOffset: input.dayOffset,
         habits: habits.map(publicDayHabit),
+        noSnoozeMorning,
         serverTimestamp: now,
       };
     }
@@ -218,6 +230,10 @@ export const handler = async (event: HabitApiEvent): Promise<unknown> => {
     earnedPointsTableNamesFromEnvironment(),
     configuredEnvironment(),
   );
+  const syncRepository = new DynamoSyncRepository(
+    syncTableNamesFromEnvironment(),
+    configuredEnvironment(),
+  );
   return handleHabitApiEvent(
     event,
     repository,
@@ -225,5 +241,6 @@ export const handler = async (event: HabitApiEvent): Promise<unknown> => {
     earnedPoints,
     awardConfigurationFromEnvironment(),
     new DynamoRateLimiter(),
+    syncRepository,
   );
 };

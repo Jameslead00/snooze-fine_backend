@@ -202,6 +202,8 @@ platformTables.habitOccurrence.grantReadWriteData(functions.habit.resources.lamb
 platformTables.habitProgressEvent.grantReadWriteData(functions.habit.resources.lambda);
 platformTables.earnedPointAccount.grantReadWriteData(functions.habit.resources.lambda);
 platformTables.earnedPointEvent.grantReadWriteData(functions.habit.resources.lambda);
+platformTables.userProfile.grantReadData(functions.habit.resources.lambda);
+platformTables.wakeCompletion.grantReadData(functions.habit.resources.lambda);
 // CDK's grantReadWriteData intentionally covers the individual DynamoDB item
 // actions, but not TransactWriteItems. Progress recording atomically writes the
 // occurrence and event tables, and a completion atomically writes the points
@@ -223,6 +225,7 @@ functions.habit.resources.lambda.addToRolePolicy(
     resources: [
       `${platformTables.habit.tableArn}/index/byUserEnvironmentAndUpdatedAt`,
       `${platformTables.habitOccurrence.tableArn}/index/byUserEnvironmentDateAndHabitId`,
+      `${platformTables.wakeCompletion.tableArn}/index/byUserEnvironmentAndCompletedAt`,
     ],
   }),
 );

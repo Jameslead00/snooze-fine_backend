@@ -147,19 +147,26 @@ describe('habit API', () => {
     expect(habit).toBeDefined();
     await settleHabit(repository, habit!, '2026-07-31', '2026-07-31T22:00:00.000Z');
 
+    const statistics = vi.fn().mockResolvedValue({ todayNoSnoozeMorning: true });
     const day = (await handleHabitApiEvent(
       { fieldName: 'getMyHabitDay', arguments: { dayOffset: -1 }, identity },
       repository,
       '2026-08-01T12:00:00.000Z',
       points,
+      undefined,
+      undefined,
+      { statistics },
     )) as {
       dayOffset: number;
+      noSnoozeMorning: boolean;
       habits: Array<{ localDate: string; status: string; editable: boolean }>;
     };
     expect(day).toMatchObject({
       dayOffset: -1,
+      noSnoozeMorning: true,
       habits: [{ localDate: '2026-07-31', status: 'MISSED', editable: true }],
     });
+    expect(statistics).toHaveBeenCalledWith(userId, '2026-07-31T12:00:00.000Z');
 
     const result = (await handleHabitApiEvent(
       {
